@@ -1,0 +1,30 @@
+{
+  "events": [
+    {
+      "id": "event-bitcoin-150k",
+      "slug": "when-will-bitcoin-hit-150k",
+      "title": "When will Bitcoin hit $150k?",
+      "description": "Bitcoin price target markets.",
+      "image": "https://fixture.test/btc.png",
+      "active": true,
+      "closed": false,
+      "volume": "2500000",
+      "liquidity": "85000",
+      "markets": [
+        {
+          "id": "market-bitcoin-2026",
+          "question": "Will Bitcoin hit $150k in 2026?",
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.42\", \"0.58\"]",
+          "clobTokenIds": "[\"100\", \"200\"]",
+          "volume": "1600000",
+          "liquidity": "70000",
+          "oneDayPriceChange": "0.03",
+          "active": true,
+          "closed": false
+        }
+      ]
+    }
+  ],
+  "markets": []
+}

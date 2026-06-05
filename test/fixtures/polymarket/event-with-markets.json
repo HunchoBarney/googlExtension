@@ -1,0 +1,37 @@
+[
+  {
+    "id": "event-fed-rates",
+    "slug": "fed-interest-rate-decisions",
+    "title": "Fed interest rate decisions",
+    "description": "Federal Reserve policy markets.",
+    "active": true,
+    "closed": false,
+    "markets": [
+      {
+        "id": "market-fed-cut",
+        "question": "Will the Fed cut interest rates after the next CPI report?",
+        "outcomes": [
+          "Yes",
+          "No"
+        ],
+        "outcomePrices": [
+          "0.36",
+          "0.64"
+        ],
+        "volumeNum": 950000,
+        "liquidityNum": 45000,
+        "active": true,
+        "closed": false
+      },
+      {
+        "id": "market-fed-hike-closed",
+        "question": "Will the Fed hike interest rates in 2024?",
+        "outcomes": "[\"Yes\", \"No\"]",
+        "outcomePrices": "[\"0\", \"1\"]",
+        "volumeNum": 2000000,
+        "active": false,
+        "closed": true
+      }
+    ]
+  }
+]

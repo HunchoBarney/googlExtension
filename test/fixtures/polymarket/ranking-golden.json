@@ -1,0 +1,118 @@
+{
+  "markets": [
+    {
+      "id": "fed-rate-cut",
+      "question": "Will the Fed cut interest rates after the next CPI report?",
+      "description": "Federal Reserve, CPI, inflation, FOMC, and rate cut market.",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.36\", \"0.64\"]",
+      "volume": "950000",
+      "liquidity": "45000",
+      "active": true,
+      "closed": false
+    },
+    {
+      "id": "trump-china-tariffs",
+      "question": "Will Trump impose new China tariffs in 2026?",
+      "description": "Donald Trump, China trade, tariffs, election, and campaign market.",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.48\", \"0.52\"]",
+      "volume": "870000",
+      "liquidity": "35000",
+      "active": true,
+      "closed": false
+    },
+    {
+      "id": "bitcoin-150k",
+      "question": "Will Bitcoin hit $150k in 2026?",
+      "description": "Bitcoin BTC crypto price target market.",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.42\", \"0.58\"]",
+      "volume": "1600000",
+      "liquidity": "70000",
+      "active": true,
+      "closed": false
+    },
+    {
+      "id": "nvidia-ai-earnings",
+      "question": "Will Nvidia beat earnings expectations after AI chip demand?",
+      "description": "Nvidia, artificial intelligence, GPU, semiconductor, and earnings market.",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.55\", \"0.45\"]",
+      "volume": "640000",
+      "liquidity": "30000",
+      "active": true,
+      "closed": false
+    },
+    {
+      "id": "lakers-celtics",
+      "question": "Will the Lakers beat the Celtics in their next NBA game?",
+      "description": "NBA, Lakers, Celtics, basketball game, playoff seeding market.",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.49\", \"0.51\"]",
+      "volume": "540000",
+      "liquidity": "26000",
+      "active": true,
+      "closed": false
+    },
+    {
+      "id": "closed-bitcoin",
+      "question": "Will Bitcoin hit $100k in 2024?",
+      "description": "Resolved Bitcoin price market.",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"1\", \"0\"]",
+      "volume": "5000000",
+      "active": false,
+      "closed": true
+    },
+    {
+      "id": "entertainment-irrelevant",
+      "question": "Will Rihanna release a new album before GTA VI?",
+      "description": "Entertainment music market.",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.51\", \"0.49\"]",
+      "volume": "900000",
+      "liquidity": "25000",
+      "active": true,
+      "closed": false
+    }
+  ],
+  "articles": [
+    {
+      "name": "Fed/inflation",
+      "title": "Fed waits for CPI before rate-cut decision",
+      "cleanText": "Federal Reserve officials said inflation and CPI data will guide whether the FOMC cuts interest rates this year.",
+      "expectedTopId": "fed-rate-cut"
+    },
+    {
+      "name": "Trump/tariff",
+      "title": "Trump threatens China tariffs during campaign",
+      "cleanText": "Donald Trump said new China tariffs could become part of his election platform if trade talks fail.",
+      "expectedTopId": "trump-china-tariffs"
+    },
+    {
+      "name": "Bitcoin",
+      "title": "Bitcoin rallies as ETF inflows accelerate",
+      "cleanText": "Bitcoin rose as BTC ETF inflows lifted crypto sentiment and traders watched year-end price targets.",
+      "expectedTopId": "bitcoin-150k"
+    },
+    {
+      "name": "Nvidia/AI chip",
+      "title": "Nvidia AI chip demand lifts earnings expectations",
+      "cleanText": "Nvidia shares rose as GPU orders for artificial intelligence data centers boosted earnings expectations.",
+      "expectedTopId": "nvidia-ai-earnings"
+    },
+    {
+      "name": "sports",
+      "title": "Lakers and Celtics meet with playoff seeding at stake",
+      "cleanText": "The NBA game could shift playoff seeding as the Lakers face the Celtics.",
+      "expectedTopId": "lakers-celtics"
+    },
+    {
+      "name": "no strong match",
+      "title": "City council debates neighborhood parking permits",
+      "cleanText": "A local city council debated parking permits, crosswalk repairs, and a small budget request for neighborhood street signs.",
+      "expectedTopId": null
+    }
+  ]
+}

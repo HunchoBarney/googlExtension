@@ -1,0 +1,11 @@
+{
+  "markets": [
+    {
+      "id": "market-missing-fields",
+      "question": "Will BTC move Up or Down today?",
+      "outcomes": "Up,Down",
+      "active": true,
+      "closed": false
+    }
+  ]
+}

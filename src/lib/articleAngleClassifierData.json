@@ -1,0 +1,99 @@
+{
+  "version": "local-json-v1",
+  "labels": [
+    {
+      "topic": "politics/elections",
+      "terms": ["election", "by-election", "primary", "poll", "vote", "voter", "ballot", "campaign", "approval", "debate", "president", "senate", "house", "tariff"],
+      "entityWeights": { "person": 0.2, "place": 0.08, "institution": 0.08 },
+      "angles": [
+        { "label": "election", "terms": ["election", "by-election", "primary", "vote", "ballot", "campaign"], "queries": ["election", "by-election"] },
+        { "label": "approval rating", "terms": ["approval", "poll", "rating"], "queries": ["approval rating"] },
+        { "label": "tariff policy", "terms": ["tariff", "trade", "china"], "queries": ["tariff", "china tariff"] }
+      ],
+      "excludeAngles": ["sports", "entertainment", "weather/climate"]
+    },
+    {
+      "topic": "crypto",
+      "terms": ["bitcoin", "btc", "ethereum", "eth", "crypto", "token", "blockchain", "solana", "dogecoin", "xrp", "stablecoin", "coinbase", "etf", "defi", "wallet", "exchange", "hack", "security"],
+      "entityWeights": { "crypto": 0.25, "ticker": 0.12, "company": 0.08 },
+      "angles": [
+        { "label": "price target", "terms": ["price", "target", "hit", "reach", "rally", "jump", "traded", "above", "high"], "queries": ["price target"] },
+        { "label": "ETF flows", "terms": ["etf", "inflow", "fund", "spot"], "queries": ["ETF inflows"] },
+        { "label": "company/adoption/security", "terms": ["coinbase", "exchange", "wallet", "hack", "security", "adoption", "stablecoin", "regulation"], "queries": ["crypto adoption", "crypto security"] }
+      ],
+      "excludeAngles": ["sports", "entertainment", "weather/climate"]
+    },
+    {
+      "topic": "economy/markets",
+      "terms": ["fed", "federal reserve", "fomc", "interest rates", "rate cut", "rate decision", "inflation", "cpi", "pce", "jobs report", "unemployment", "treasury", "gdp", "recession", "yield", "stocks", "market"],
+      "entityWeights": { "institution": 0.22, "ticker": 0.08, "company": 0.06 },
+      "angles": [
+        { "label": "rate decision", "terms": ["fed", "federal reserve", "fomc", "interest rates", "rate cut", "rate decision"], "queries": ["Fed interest rates", "rate decision"] },
+        { "label": "inflation data", "terms": ["inflation", "cpi", "pce"], "queries": ["CPI inflation"] },
+        { "label": "jobs data", "terms": ["jobs report", "unemployment", "payroll"], "queries": ["jobs report"] }
+      ],
+      "excludeAngles": ["sports", "entertainment"]
+    },
+    {
+      "topic": "companies/earnings",
+      "terms": ["earnings", "revenue", "profit", "guidance", "shares", "stock", "quarter", "sales", "nasdaq", "nyse", "beat", "miss", "analyst"],
+      "entityWeights": { "company": 0.24, "ticker": 0.2, "institution": 0.05 },
+      "angles": [
+        { "label": "earnings", "terms": ["earnings", "revenue", "profit", "guidance", "quarter", "beat", "miss"], "queries": ["earnings"] },
+        { "label": "stock price", "terms": ["shares", "stock", "analyst", "target"], "queries": ["stock price"] }
+      ],
+      "excludeAngles": ["sports", "entertainment", "weather/climate"]
+    },
+    {
+      "topic": "AI/technology",
+      "terms": ["ai", "artificial intelligence", "chip", "semiconductor", "gpu", "model", "openai", "anthropic", "data center", "software", "robot", "technology"],
+      "entityWeights": { "company": 0.14, "ticker": 0.1, "organization": 0.06 },
+      "angles": [
+        { "label": "AI model", "terms": ["ai", "artificial intelligence", "model", "openai", "anthropic"], "queries": ["AI model"] },
+        { "label": "chips", "terms": ["chip", "semiconductor", "gpu", "data center"], "queries": ["AI chips", "semiconductor"] }
+      ],
+      "excludeAngles": ["sports", "entertainment", "weather/climate"]
+    },
+    {
+      "topic": "sports",
+      "terms": ["nba", "nfl", "mlb", "nhl", "game", "match", "season", "playoffs", "championship", "score", "league", "super bowl", "world cup"],
+      "entityWeights": { "sports": 0.28, "properNoun": 0.04 },
+      "angles": [
+        { "label": "matchup/winner", "terms": ["game", "match", "beat", "win", "winner", "playoffs", "championship"], "queries": ["winner", "matchup"] },
+        { "label": "season outcome", "terms": ["season", "playoffs", "championship", "super bowl", "world cup"], "queries": ["championship"] }
+      ],
+      "excludeAngles": ["politics/elections", "economy/markets", "entertainment"]
+    },
+    {
+      "topic": "geopolitics",
+      "terms": ["war", "ceasefire", "sanction", "missile", "nato", "ukraine", "russia", "china", "taiwan", "israel", "iran", "gaza", "military", "border", "diplomat", "peace deal", "conflict"],
+      "entityWeights": { "place": 0.16, "institution": 0.12, "person": 0.06 },
+      "angles": [
+        { "label": "conflict", "terms": ["war", "missile", "military", "border", "conflict"], "queries": ["conflict", "war"] },
+        { "label": "diplomacy", "terms": ["ceasefire", "diplomat", "peace deal", "talks"], "queries": ["ceasefire", "peace deal"] },
+        { "label": "sanctions", "terms": ["sanction", "oil", "trade"], "queries": ["sanctions"] }
+      ],
+      "excludeAngles": ["sports", "entertainment", "weather/climate"]
+    },
+    {
+      "topic": "entertainment",
+      "terms": ["movie", "film", "tv", "show", "series", "actor", "actress", "james bond", "festival", "cannes", "album", "box office", "oscar", "grammy", "celebrity", "streaming", "netflix", "music", "studio", "trailer", "release"],
+      "entityWeights": { "person": 0.08, "company": 0.05 },
+      "angles": [
+        { "label": "award", "terms": ["oscar", "grammy", "award", "festival", "cannes"], "queries": ["award"] },
+        { "label": "release", "terms": ["movie", "album", "release", "box office", "trailer"], "queries": ["movie release", "album release"] }
+      ],
+      "excludeAngles": ["sports", "weather/climate"]
+    },
+    {
+      "topic": "weather/climate",
+      "terms": ["hurricane", "storm", "temperature", "rain", "snow", "wildfire", "climate", "weather", "heat", "flood", "noaa", "tornado", "aurora", "geomagnetic"],
+      "entityWeights": { "place": 0.1, "institution": 0.08 },
+      "angles": [
+        { "label": "storm", "terms": ["hurricane", "storm", "tornado", "rain", "flood"], "queries": ["hurricane", "storm"] },
+        { "label": "temperature", "terms": ["temperature", "heat", "snow", "climate"], "queries": ["temperature", "weather"] }
+      ],
+      "excludeAngles": ["sports", "entertainment"]
+    }
+  ]
+}

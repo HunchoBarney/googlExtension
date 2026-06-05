@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Polymarket Article Matcher",
+  "description": "Finds high-confidence Polymarket matches for the article you are reading after manual activation.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Find Polymarket matches"
+  },
+  "background": {
+    "service_worker": "src/background/serviceWorker.js"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "windows": "Ctrl+Shift+Y",
+        "linux": "Ctrl+Shift+Y",
+        "chromeos": "Ctrl+Shift+Y",
+        "mac": "MacCtrl+Shift+P"
+      },
+      "description": "Find Polymarket matches"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://gamma-api.polymarket.com/*",
+    "https://data-api.polymarket.com/*"
+  ]
+}

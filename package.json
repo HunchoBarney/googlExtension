@@ -1,0 +1,27 @@
+{
+  "name": "predmarketextension",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test",
+    "test:polymarket:live": "node scripts/live-polymarket-smoke.js",
+    "test:articles:live": "node scripts/live-article-qa.js --limit=8",
+    "test:layout": "node scripts/popup-layout-smoke.js",
+    "test:browser": "node scripts/browser-smoke.js",
+    "test:visual": "node scripts/compare-popup-reference.js",
+    "test:live": "npm run test:polymarket:live && npm run test:articles:live",
+    "test:release": "npm test && npm run test:layout && npm run test:live && npm run test:browser"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "playwright-core": "^1.60.0"
+  }
+}

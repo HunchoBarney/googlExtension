@@ -1,0 +1,231 @@
+# Goal: Ship a Manual-Activation Polymarket Article Matcher Extension
+
+## Completion Rule
+
+This plan is complete only when the extension is good enough for a real user to click it on a live article and get a useful, trustworthy Polymarket match experience.
+
+Good enough means:
+- The extension can be loaded unpacked in Chrome/Chromium and opened from the toolbar or extensions menu.
+- A user-style click on a real article tab triggers article extraction, local analysis, Polymarket search, ranking, and popup rendering.
+- The popup displays only live, relevant Polymarket parent events. Child markets are not shown as separate popup cards; clicking the parent event opens the Polymarket event page where related markets live.
+- Weak, unrelated, inactive, closed, resolved, archived, pending-review, draft, or otherwise unavailable events never appear as selectable options.
+- If no strong match exists, the popup clearly says no strong Polymarket match was found instead of filling the UI with weak matches.
+- The popup has production-quality UX in the real Chrome extension window and never collapses into an unusable layout such as a 25 px-wide strip.
+- Automated tests, browser integration tests, and mandatory live article QA pass.
+
+Do not keep expanding scope after these gates pass. Preserve follow-up ideas in the deferred section unless they are required to satisfy the release gate.
+
+## Work Rules
+
+- Commit progress regularly with small, clear messages.
+- Keep changes scoped to the extension, tests, fixtures, and plan.
+- Prefer deterministic local analysis over remote AI services.
+- Do not send full article text or extracted article features to an AI service.
+- Use minimum practical browser permissions: Manifest V3, `activeTab`, and `scripting`.
+- Treat high precision as more important than exhaustive coverage. Fewer strong matches are better than many noisy matches.
+- Any new tooling or test protocol must be documented enough that it can be rerun.
+
+## Goal 1: Manual Activation and Privacy
+
+Done when:
+- The extension is a Chrome/Chromium Manifest V3 extension.
+- Page content is read only after manual user activation.
+- The extension uses `activeTab` and `scripting` rather than broad `<all_urls>` host permissions.
+- There is no background monitoring of every page.
+- V1 is read-only and does not support trading or wallet actions.
+
+Tests that must pass:
+- Static manifest checks verify required permissions and reject broad, unnecessary host permissions.
+- Integration tests verify the active tab is accessed only after user-style extension activation.
+- Privacy checks verify full article text is not sent to any AI service.
+
+## Goal 2: Article Extraction
+
+Done when:
+- Clicking the extension on a readable article extracts the article title, clean body text, headings, metadata, canonical URL, and selected text when available.
+- Mozilla Readability is preferred over raw `document.body.innerText`.
+- Ads, navigation, comments, newsletter boxes, sidebars, and unrelated links are excluded as much as practical.
+- Pages without readable content fail gracefully.
+
+Tests that must pass:
+- Fixture tests cover clean news articles, blogs, paywall or preview articles, noisy pages with sidebars, pages with selected text, and pages with no readable article.
+- Extraction tests verify structured output fields and graceful failure states.
+- Live article QA includes current public articles found during the test run, not only saved fixtures.
+
+## Goal 3: Local Model Article Understanding
+
+Done when:
+- The primary article-understanding path is a local trained model that runs in the browser.
+- The model identifies the main aspect of the article, not just surface word overlap.
+- The model outputs compact search features for Polymarket: main topic, subtopics, important entities, intent/market angle, exclusion hints, confidence, and query keywords.
+- Query generation uses the local model output first, then deterministic cleanup such as deduping, stopword removal, and entity normalization.
+- Article text, extracted features, model inputs, and model outputs are not sent to remote AI services.
+- The popup does not expose broken analysis-mode comparison controls. Any visible analysis controls must reflect working local model behavior.
+
+The local model is good enough when:
+- V1 ships as a compact local artifact, such as an inspectable JSON model, calibrated linear model, or other browser-runnable trained asset.
+- It scores compact local features such as title terms, important entities, phrase matches, publisher/category hints, numeric/time expressions, and query candidates.
+- It outputs structured signals: primary topic, subtopics, market angles, relevant entity types, exclusion hints, and confidence.
+- Its output is visible in debug or test summaries so ranking decisions can be explained.
+- It runs locally within popup latency budgets.
+
+Example local model output:
+```json
+{
+  "topic": "economy/markets",
+  "subtopics": ["fed", "interest rates", "inflation"],
+  "marketAngles": ["rate decision", "fed chair", "cpi"],
+  "excludeAngles": ["sports", "entertainment"],
+  "confidence": 0.87
+}
+```
+
+Tests that must pass:
+- Model golden tests verify stable article-aspect, topic, market-angle, exclusion, and confidence outputs.
+- Query generation tests verify the model-derived keywords produce compact Polymarket API queries.
+- Regression tests verify the model rejects surface-word false positives when the main article aspect does not match the Polymarket event.
+- Ranking tests prove model-assisted relevance improves or preserves precision compared with raw entity/keyword overlap.
+- Latency tests enforce that local model analysis remains fast enough for popup use.
+- Privacy tests verify the local model path does not send article text or model features to remote AI services.
+
+## Goal 4: Polymarket Search and Normalization
+
+Done when:
+- The extension generates multiple compact Polymarket search queries from article signals.
+- It queries public Polymarket APIs, primarily:
+  - `https://gamma-api.polymarket.com/public-search`
+  - `https://gamma-api.polymarket.com/events`
+  - `https://gamma-api.polymarket.com/markets`
+- It optionally uses `https://clob.polymarket.com/*` only if fresher prices are needed.
+- API responses are normalized into a stable internal candidate shape.
+- Stringified JSON fields are parsed safely, including `outcomes`, `outcomePrices`, and `clobTokenIds`.
+- Parent events include a stable Polymarket event URL when available.
+- Outcome labels and prices are normalized without assuming every market is Yes/No.
+- Binary Yes/No markets render Yes and No percentages.
+- Sports, team, candidate, multi-option, and non-binary markets keep their original option names and percentages.
+- The UI does not show extra hardcoded labels such as a duplicate Yes/Up percentage.
+
+Tests that must pass:
+- Fixture tests cover public-search results, event responses with nested markets, standalone market responses, stringified JSON fields, missing optional fields, and malformed responses.
+- Live Polymarket API smoke tests verify endpoints respond, schemas are still parseable, and API failures/timeouts/rate limits show graceful popup states.
+
+## Goal 5: Relevance Ranking, Filtering, and Parent Events
+
+Done when:
+- Candidates are ranked locally using hybrid signals: entity match strength, keyword overlap, topic/category match, local model market angle, title/question relevance, active/open status, liquidity/volume, and trend relevance.
+- Trending Polymarket events get priority only after relevance is established.
+- Trending events with no meaningful article relevance are excluded.
+- Non-live, inactive, closed, resolved, archived, pending-review, pending-approval, draft, in-review, or otherwise unavailable events and markets are filtered before display.
+- Parent event cards are the only top-level UI result unit.
+- Child markets can be used internally for scoring, filtering, and option summaries, but they are not rendered as popup result cards or dropdown children.
+- Clicking a parent event card opens the Polymarket parent event page, not an individual child market page, so the user lands on the page containing the related markets under that topic.
+- A parent event is excluded if parent-event relevance is not strong enough, even if one child market has weak keyword overlap.
+- The ranking system can choose a no-match state when confidence is below threshold.
+
+Tests that must pass:
+- Ranking golden tests produce stable ordered results for fixed article and Polymarket fixtures.
+- No-match golden tests verify weak candidates are hidden.
+- Parent-event display fixtures verify one parent card is rendered for an event with child markets and child markets are not rendered as separate cards or dropdown content.
+- Parent-event click tests verify the rendered card opens the Polymarket event URL.
+- Weak-parent fixtures verify generic child keyword overlap does not allow an unrelated parent event through.
+- Pending-review and non-live fixtures verify unavailable options never render.
+- Trending fixtures verify relevant trends can be boosted and irrelevant trends are filtered out.
+
+## Goal 6: Popup UX
+
+Done when:
+- The popup is compact, scannable, and similar in spirit to polished market-card extensions and Polymarket feeds.
+- Each result shows the parent event image, parent event title, model relevance summary, option labels with percentages when available, optional volume/liquidity metadata, and a link to the Polymarket parent event page.
+- Outcome display is option-agnostic: Yes/No markets show Yes and No, sports markets show team names, and multi-option markets show the option names returned by Polymarket.
+- The UI does not invent or duplicate option names such as showing an extra Yes/Up percentage.
+- Missing image, price, movement, category, or optional metadata never breaks rendering.
+- The popup has clear states: reading page, extracting article, searching Polymarket, showing results, no readable article, no strong matches, API/network error, and extension permission/opening error.
+- Result links open the corresponding Polymarket parent event page.
+- The real Chrome popup has a stable usable width and does not clip primary content.
+
+Tests that must pass:
+- Popup rendering tests mount success, empty, loading, and error states.
+- Interaction tests verify parent event cards are clickable and open event-page links.
+- Layout tests verify parent event cards, option labels, fallback images, unavailable prices, links, and messages render without broken layout.
+- Option-display tests verify Yes/No, team-vs-team, and multi-option markets preserve the original option names and percentages.
+- Tests verify child markets are hidden from the popup result UI while the parent event remains visible and clickable.
+- Manual UX inspection rejects obvious flaws, including collapsed width, clipped content, unreadable spacing, or broken click targets.
+
+## Goal 7: Automated Test Suite
+
+Done when:
+- A fast local automated suite can be run with `node --test`.
+- The suite covers extraction, local model output, model-derived query generation, Polymarket parsing, ranking, filtering, parent-event display, option-agnostic rendering, popup states, and interaction behavior.
+- Fixture coverage includes politics/elections, crypto, finance/markets, AI/technology, sports, geopolitics, entertainment, weather/climate, and local/no-market articles.
+
+Required golden cases:
+- Fed/rates/inflation article -> `economy/markets`, `rate decision`.
+- Bitcoin price article -> `crypto`, `price target`.
+- Crypto business/security article -> `crypto`, `company/adoption/security`, not generic token-price markets unless entity and angle match.
+- UK by-election article -> `politics/elections`, `by-election`.
+- Geopolitics or Iran-related article -> `geopolitics`, conflict/diplomacy/sanctions angle when relevant.
+- Finance article -> `economy/markets` or company/earnings angle when relevant.
+- Sports matchup article -> `sports`, matchup/winner angle.
+- Weather article -> `weather/climate`, disaster/temperature/storm angle.
+- Local/no-market article -> no strong Polymarket angle.
+
+## Goal 8: Mandatory Live Chrome User-Experience Test
+
+Done when:
+- A real Chrome/Chromium browser profile launches with the unpacked extension installed.
+- A live public article URL opens in an actual browser tab.
+- The extension is visible from the toolbar or Chrome extensions menu.
+- The extension is triggered by a real click or the same browser action event Chrome fires for user activation.
+- The popup opens in the browser, not only in isolated unit tests or jsdom.
+- The popup progresses through reading page, extracting article, searching Polymarket, and final result or no-match states.
+- Parent event cards can be clicked and open valid Polymarket parent event pages.
+- The test prints a concise live summary with article URL, title, model topic/aspect, model keywords, generated queries, returned candidate event names, displayed parent event names, confidence scores, and pass/fail notes.
+- Screenshots can be captured for layout/debug failures, but live test success does not require persistent report artifacts.
+
+The live browser UX test must fail if:
+- The extension is missing from Chrome or cannot be opened.
+- The toolbar action or extensions menu cannot trigger the extension.
+- The extension cannot read the live tab after user-style activation.
+- The popup gets stuck in loading.
+- The popup renders an API or extension error for the main happy path.
+- The popup collapses to an unusable width or clips primary content.
+- Rendered parent event links are broken.
+- Non-live, pending-review, inactive, closed, resolved, archived, or weakly related events are shown as selectable options.
+
+## Goal 9: Live Article QA Protocol
+
+Done when:
+- The test run finds current public articles from real publishers, blogs, or feeds during the run.
+- It tests across crypto, finance/markets, politics, AI/technology, sports, geopolitics, entertainment, weather/climate, and at least one article expected to have no strong Polymarket match.
+- It keeps testing current articles until at least one article produces a live strong candidate, unless Polymarket has no relevant live markets for the tested topics and the no-match behavior is correct.
+- It summarizes each article URL, title, model keywords, entities, topic/aspect, model signals, generated queries, Polymarket candidates, displayed parent events, clicked parent event URL, and relevance judgment.
+- Failures are saved as regression fixtures when extraction, ranking, parsing, filtering, parent-event selection, or rendering behaves incorrectly.
+
+## Goal 10: Release Gate
+
+The release gate passes only when:
+- `node --test` passes.
+- Browser integration smoke tests pass with the unpacked extension.
+- Mandatory live Chrome user-experience test passes with real browser clicks/events.
+- Live article QA passes on a fresh set of current public articles.
+- At least one live article produces a strong, relevant, live Polymarket candidate.
+- At least one live article correctly produces a no-match state.
+- The popup UX is manually inspected in the real Chrome extension window and has no obvious usability flaws.
+- Known false positives, false negatives, API issues, and saved regression fixtures are documented.
+
+## Deferred Unless Required For Release Gate
+
+- Heavier local ML models such as ONNX or Transformers.js.
+- Embedding-based ranking.
+- CLOB price lookups beyond what is needed for reliable display.
+- Trading, wallet, login, or order placement features.
+- Broad publisher-specific extraction adapters beyond what is needed to pass the release gate.
+
+## Assumptions
+
+- Target platform is Chrome or Chromium with Manifest V3.
+- The user manually activates the extension; it does not monitor every page automatically.
+- V1 uses local deterministic extraction plus a local trained article-understanding model, not remote LLM extraction.
+- Any model must ship with the extension and run locally in the browser.
+- A transparent compact model is preferred over a heavier neural model unless measured ranking quality justifies size and latency costs.
+- The system is allowed to show no match when relevance is not strong enough.
