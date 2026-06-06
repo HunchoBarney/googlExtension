@@ -15,6 +15,8 @@
   const DEFAULT_MIN_CONFIDENCE = 55;
   const DEFAULT_MAX_RESULTS = 5;
   const DEFAULT_MAX_CHILD_MARKETS = 5;
+  const STRONG_MATCH_CONFIDENCE = 55;
+  const MAYBE_MATCH_CONFIDENCE = 35;
   const STOPWORDS = new Set([
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have", "in", "is", "it", "its", "of",
     "on", "or", "that", "the", "this", "to", "was", "will", "with", "before", "after", "over", "under"
@@ -1033,6 +1035,41 @@
     return Math.min(8, score);
   }
 
+  function maybeRelatedByBreakdown(scoreBreakdown) {
+    if (!scoreBreakdown) {
+      return false;
+    }
+    const hasArticleOverlap = (
+      scoreBreakdown.entities >= 8 ||
+      scoreBreakdown.keywords >= 7 ||
+      scoreBreakdown.overlap >= 5 ||
+      (scoreBreakdown.centralEntityHits || []).length > 0
+    );
+    const hardPenalty = (
+      scoreBreakdown.topicMismatch <= -24 ||
+      scoreBreakdown.strictTopicPenalty <= -30 ||
+      scoreBreakdown.speechPenalty <= -40 ||
+      scoreBreakdown.relevanceGateCap === 45
+    );
+    return hasArticleOverlap && !hardPenalty;
+  }
+
+  function matchTierForConfidence(confidence, scoreBreakdown) {
+    if (confidence >= STRONG_MATCH_CONFIDENCE) {
+      return "strong";
+    }
+    if (confidence >= MAYBE_MATCH_CONFIDENCE && maybeRelatedByBreakdown(scoreBreakdown)) {
+      return "maybe";
+    }
+    return "reject";
+  }
+
+  function specificArticlePhrases(article) {
+    return (article.queries || [])
+      .filter((query) => /\b(pixel watch|apple watch|iphone|galaxy watch|playstation|xbox)\b/i.test(query))
+      .slice(0, 3);
+  }
+
   function rankCandidate(candidate, article) {
     const entities = entityScore(candidate, article);
     const keywords = keywordScore(candidate, article);
@@ -1048,36 +1085,55 @@
     const trending = trendBoostScore(candidate, relevanceScore, topicMismatch);
     const placeOnlyPenalty = entities > 0 && highSignalEntityScore(candidate, article) === 0 && keywords < 12 && overlap < 10 ? -16 : 0;
     const weakMatchPenalty = entities < 8 && keywords < 7 && overlap < 5 ? -20 : 0;
-    const uncappedConfidence = Math.max(0, Math.min(100, relevanceScore + quality + trending + topicMismatch + strictTopicPenalty + speechPenalty + classifier.penalty + gate.penalty + placeOnlyPenalty + weakMatchPenalty));
-    const confidence = gate.maxConfidence === null
+    let productSpecificityPenalty = 0;
+    let productSpecificityCap = null;
+    const specificPhrases = specificArticlePhrases(article);
+    if (specificPhrases.length) {
+      const candidateText = `${candidate.title} ${candidate.eventTitle} ${candidate.description}`;
+      const hasSpecificPhrase = specificPhrases.some((phrase) => textHasTerm(candidateText, phrase));
+      if (!hasSpecificPhrase && entities > 0) {
+        productSpecificityPenalty = -8;
+        productSpecificityCap = 54;
+        gate.reasons.push("missing-specific-product");
+      }
+    }
+
+    const confidenceCaps = [gate.maxConfidence, productSpecificityCap].filter((value) => value !== null);
+    const maxConfidence = confidenceCaps.length ? Math.min(...confidenceCaps) : null;
+    const uncappedConfidence = Math.max(0, Math.min(100, relevanceScore + quality + trending + topicMismatch + strictTopicPenalty + speechPenalty + classifier.penalty + gate.penalty + productSpecificityPenalty + placeOnlyPenalty + weakMatchPenalty));
+    const confidence = maxConfidence === null
       ? uncappedConfidence
-      : Math.min(uncappedConfidence, gate.maxConfidence);
+      : Math.min(uncappedConfidence, maxConfidence);
+    const scoreBreakdown = {
+      entities,
+      keywords,
+      overlap,
+      topic,
+      classifier: classifier.boost,
+      classifierPenalty: classifier.penalty,
+      classifierAngleHits: classifier.angleHits,
+      classifierExcludeHits: classifier.excludeHits,
+      relevanceGate: gate.boost + gate.penalty,
+      relevanceGateCap: maxConfidence,
+      relevanceGateReasons: gate.reasons,
+      candidateAngles: gate.candidateAngles,
+      centralEntityHits: gate.centralEntityHits,
+      quality,
+      trending,
+      topicMismatch,
+      strictTopicPenalty,
+      speechPenalty,
+      productSpecificityPenalty,
+      placeOnlyPenalty,
+      weakMatchPenalty
+    };
+    const matchTier = matchTierForConfidence(confidence, scoreBreakdown);
 
     return {
       ...candidate,
       confidence,
-      scoreBreakdown: {
-        entities,
-        keywords,
-        overlap,
-        topic,
-        classifier: classifier.boost,
-        classifierPenalty: classifier.penalty,
-        classifierAngleHits: classifier.angleHits,
-        classifierExcludeHits: classifier.excludeHits,
-        relevanceGate: gate.boost + gate.penalty,
-        relevanceGateCap: gate.maxConfidence,
-        relevanceGateReasons: gate.reasons,
-        candidateAngles: gate.candidateAngles,
-        centralEntityHits: gate.centralEntityHits,
-        quality,
-        trending,
-        topicMismatch,
-        strictTopicPenalty,
-        speechPenalty,
-        placeOnlyPenalty,
-        weakMatchPenalty
-      }
+      matchTier,
+      scoreBreakdown
     };
   }
 
@@ -1088,6 +1144,7 @@
       .filter(isDisplayableCandidate)
       .map((candidate) => rankCandidate(candidate, article))
       .filter((candidate) => candidate.confidence >= minConfidence)
+      .filter((candidate) => candidate.matchTier === "strong" || (options.includeMaybe && candidate.matchTier === "maybe"))
       .sort((a, b) => b.confidence - a.confidence || (b.volume24hr || 0) - (a.volume24hr || 0) || (b.volume || 0) - (a.volume || 0))
       .slice(0, maxResults);
   }
@@ -1096,24 +1153,30 @@
     const queryTokens = tokenize(query);
     const title = canonicalKey(`${candidate.title} ${candidate.eventTitle}`);
     const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
-    let score = 42;
+    let relevance = 0;
 
     for (const token of queryTokens) {
       if (textHasTerm(title, token)) {
-        score += 10;
+        relevance += 10;
       } else if (textHasTerm(text, token)) {
-        score += 4;
+        relevance += 4;
       }
     }
 
     if (queryTokens.length) {
       const titleHits = queryTokens.filter((token) => textHasTerm(title, token)).length;
       if (titleHits === queryTokens.length) {
-        score += 18;
+        relevance += 18;
       } else if (titleHits >= Math.ceil(queryTokens.length * 0.6)) {
-        score += 9;
+        relevance += 9;
       }
     }
+
+    if (relevance <= 0) {
+      return 0;
+    }
+
+    let score = 34 + relevance;
 
     if (candidate.volume) {
       score += Math.min(9, Math.log10(candidate.volume + 1) * 1.4);
@@ -1221,6 +1284,9 @@
     group.liquidity = Math.max(group.liquidity || 0, candidate.liquidity || 0);
     group.traderCount = Math.max(group.traderCount || 0, candidate.traderCount || 0);
     group.sourceQueries = Array.from(new Set([...(group.sourceQueries || []), ...(candidate.sourceQueries || [])]));
+    if (candidate.matchTier === "strong" || group.matchTier !== "strong") {
+      group.matchTier = candidate.matchTier || group.matchTier || "strong";
+    }
     if (!group.image && candidate.image) {
       group.image = candidate.image;
     }
@@ -1284,38 +1350,53 @@
           movement: primary.movement,
           url: group.eventSlug ? `${POLYMARKET}/event/${group.eventSlug}` : primary.url,
           parentConfidence: parentRank ? parentRank.confidence : group.confidence,
+          matchTier: parentRank ? parentRank.matchTier : (group.matchTier || "strong"),
           parentScoreBreakdown: parentRank ? parentRank.scoreBreakdown : null,
           markets
         };
       })
       .filter((group) => !article || group.parentConfidence >= minParentConfidence)
-      .sort((a, b) => (b.confidence || 0) - (a.confidence || 0) || (b.volume24hr || 0) - (a.volume24hr || 0) || (b.volume || 0) - (a.volume || 0))
+      .sort((a, b) => (b.parentConfidence || b.confidence || 0) - (a.parentConfidence || a.confidence || 0) || (b.volume24hr || 0) - (a.volume24hr || 0) || (b.volume || 0) - (a.volume || 0))
       .slice(0, maxGroups);
   }
 
-  function searchUrls(query, index) {
-    const encoded = encodeURIComponent(query);
-    const urls = [
-      {
-        url: `${GAMMA_API}/public-search?q=${encoded}`,
-        source: "public-search"
-      }
-    ];
+  function publicSearchUrl(query, options = {}) {
+    const params = new URLSearchParams();
+    params.set("q", query);
+    params.set("events_status", "active");
+    params.set("limit_per_type", String(Math.max(3, Math.min(20, Number(options.limitPerType) || 8))));
+    params.set("keep_closed_markets", "0");
+    params.set("search_profiles", "false");
+    params.set("search_tags", "false");
+    return {
+      url: `${GAMMA_API}/public-search?${params.toString()}`,
+      source: "public-search"
+    };
+  }
 
-    if (index < 2) {
-      urls.push(
-        {
-          url: `${GAMMA_API}/events?limit=24&active=true&closed=false&q=${encoded}`,
-          source: "events"
-        },
-        {
-          url: `${GAMMA_API}/markets?limit=24&active=true&closed=false&q=${encoded}`,
-          source: "markets"
-        }
-      );
+  function searchUrls(query, _index, options = {}) {
+    return [publicSearchUrl(query, options)];
+  }
+
+  function shouldFetchSimilarEvents(article, options = {}) {
+    if (options.includeSimilar !== true) {
+      return false;
     }
+    const title = normalizeWhitespace(article && article.title);
+    return title.length >= 12 && !/^untitled\b/i.test(title);
+  }
 
-    return urls;
+  function similarEventRequest(article, options = {}) {
+    const title = normalizeWhitespace(article && article.title);
+    const params = new URLSearchParams();
+    params.set("event_title", title);
+    params.set("closed", "false");
+    params.set("limit", String(Math.max(3, Math.min(20, Number(options.similarLimit) || 5))));
+    return {
+      url: `${GAMMA_API}/events/similar?${params.toString()}`,
+      query: title,
+      source: "events-similar"
+    };
   }
 
   async function fetchJson(fetchImpl, url) {
@@ -1454,12 +1535,20 @@
       throw new Error("No fetch implementation is available.");
     }
 
-    const queries = (article.queries && article.queries.length ? article.queries : []).slice(0, 6);
+    const queries = (article.queries && article.queries.length ? article.queries : []).slice(0, 8);
     if (!queries.length) {
       return [];
     }
 
-    const requests = queries.flatMap((query, index) => searchUrls(query, index).map((item) => ({ ...item, query })));
+    const searchOptions = {
+      limitPerType: options.searchLimitPerType
+    };
+    const requests = queries.flatMap((query, index) => (
+      searchUrls(query, index, searchOptions).map((item) => ({ ...item, query }))
+    ));
+    if (shouldFetchSimilarEvents(article, options)) {
+      requests.push(similarEventRequest(article, options));
+    }
     const results = await Promise.allSettled(requests.map(async (request) => {
       const payload = await fetchJson(fetchImpl, request.url);
       return flattenPayload(payload, {

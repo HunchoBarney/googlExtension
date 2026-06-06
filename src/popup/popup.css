@@ -892,6 +892,38 @@ button {
   line-height: 1.3;
 }
 
+.related-pagination {
+  display: grid;
+  gap: 8px;
+  padding: 2px 0 12px;
+}
+
+.related-load-more {
+  display: inline-flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(10, 116, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+.related-load-more:hover {
+  border-color: rgba(10, 116, 255, 0.42);
+  background: rgba(242, 247, 255, 0.96);
+}
+
+.related-scroll-sentinel {
+  width: 100%;
+  height: 1px;
+}
+
 .empty-state,
 .error-state {
   padding: 18px 14px;

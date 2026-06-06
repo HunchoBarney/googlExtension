@@ -669,3 +669,244 @@ test("searchAndRank tolerates partial API failures", async () => {
   assert.ok(ranked.length >= 1);
   assert.equal(ranked[0].id, "market-1");
 });
+
+test("fetchCandidates uses tuned public-search requests for text retrieval", async () => {
+  const calls = [];
+  const analyzed = signals.analyzeArticle({
+    title: "Dogecoin added to Paxos brokerage and custody platform",
+    cleanText: "Paxos added Dogecoin support for brokerage and custody customers while DOGE traders watched crypto adoption."
+  });
+
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    return {
+      ok: true,
+      json: async () => ({ events: [] })
+    };
+  };
+
+  const candidates = await polymarket.fetchCandidates({
+    ...analyzed,
+    queries: ["Dogecoin", "Dogecoin price"]
+  }, {
+    fetchImpl,
+    includeSimilar: false,
+    searchLimitPerType: 8
+  });
+
+  assert.deepEqual(candidates, []);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((url) => url.includes("/public-search?")));
+  assert.ok(calls.every((url) => url.includes("q=Dogecoin")));
+  assert.ok(calls.every((url) => url.includes("limit_per_type=8")));
+  assert.ok(calls.every((url) => url.includes("events_status=active")));
+  assert.ok(calls.every((url) => url.includes("keep_closed_markets=0")));
+  assert.ok(calls.every((url) => url.includes("search_profiles=false")));
+  assert.ok(calls.every((url) => url.includes("search_tags=false")));
+  assert.ok(calls.every((url) => !url.includes("optimized=true")));
+  assert.ok(calls.every((url) => !url.includes("/events?")));
+  assert.ok(calls.every((url) => !url.includes("/markets?")));
+});
+
+test("fetchCandidates can request similar events from the article title", async () => {
+  const calls = [];
+  const analyzed = signals.analyzeArticle({
+    title: "Bitcoin preps May downside but US PMI data may boost BTC price",
+    cleanText: "Bitcoin traders watched BTC support levels, PMI data, and crypto price targets."
+  });
+
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.includes("/events/similar?")) {
+      return {
+        ok: true,
+        json: async () => [{
+          id: "similar-event",
+          slug: "bitcoin-price-on-june-3",
+          title: "Bitcoin price on June 3?",
+          active: true,
+          closed: false,
+          markets: [{
+            id: "similar-market",
+            question: "Bitcoin price on June 3?",
+            outcomes: "[\"Yes\", \"No\"]",
+            outcomePrices: "[\"0.51\", \"0.49\"]",
+            volume: "1200000",
+            active: true,
+            closed: false
+          }]
+        }]
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({ events: [] })
+    };
+  };
+
+  const candidates = await polymarket.fetchCandidates({
+    ...analyzed,
+    queries: ["Bitcoin price"]
+  }, {
+    fetchImpl,
+    includeSimilar: true,
+    similarLimit: 5
+  });
+
+  assert.ok(calls.some((url) => url.includes("/events/similar?")));
+  assert.ok(calls.some((url) => url.includes("event_title=Bitcoin+preps+May+downside")));
+  assert.ok(calls.some((url) => url.includes("closed=false")));
+  assert.ok(calls.some((url) => url.includes("limit=5")));
+  assert.ok(candidates.some((candidate) => candidate.id === "similar-market"));
+  assert.ok(candidates.find((candidate) => candidate.id === "similar-market").sourceQueries.includes("Bitcoin preps May downside but US PMI data may boost BTC price"));
+});
+
+test("manual search requires lexical query relevance before volume boosts", async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({
+      events: [
+        {
+          id: "relevant-event",
+          title: "Google Pixel Watch release date",
+          active: true,
+          closed: false,
+          markets: [{
+            id: "pixel-watch",
+            question: "Will Google release Pixel Watch 5 by October?",
+            outcomes: "[\"Yes\", \"No\"]",
+            outcomePrices: "[\"0.42\", \"0.58\"]",
+            volume: "10000",
+            active: true,
+            closed: false
+          }]
+        },
+        {
+          id: "noise-event",
+          title: "World Cup winner",
+          active: true,
+          closed: false,
+          markets: [{
+            id: "world-cup",
+            question: "Will Brazil win the World Cup?",
+            outcomes: "[\"Yes\", \"No\"]",
+            outcomePrices: "[\"0.25\", \"0.75\"]",
+            volume: "5000000",
+            liquidity: "900000",
+            active: true,
+            closed: false
+          }]
+        }
+      ]
+    })
+  });
+
+  const matches = await polymarket.searchMarkets("Google Pixel Watch", {
+    fetchImpl,
+    maxResults: 5
+  });
+
+  assert.deepEqual(matches.map((candidate) => candidate.id), ["pixel-watch"]);
+});
+
+test("rankCandidate labels high-confidence matches as strong", () => {
+  const analyzed = article();
+  const scored = polymarket.rankCandidate(polymarket.normalizeMarket({
+    id: "btc-strong",
+    question: "Will Bitcoin hit $150k in 2026?",
+    description: "Bitcoin BTC crypto price target market.",
+    outcomes: "[\"Yes\", \"No\"]",
+    outcomePrices: "[\"0.44\", \"0.56\"]",
+    volume: "1000000",
+    liquidity: "50000",
+    active: true,
+    closed: false
+  }), analyzed);
+
+  assert.equal(scored.matchTier, "strong");
+  assert.ok(scored.confidence >= 55);
+});
+
+test("rankCandidate labels plausible lower-confidence matches as maybe", () => {
+  const analyzed = signals.analyzeArticle({
+    title: "The Google Pixel Watch 5 may have been spoiled by the creator of Borderlands",
+    cleanText: [
+      "A video game creator appeared to show unreleased Google Pixel Watch hardware.",
+      "The article focused on Wear OS, Android, battery life, display details, and Google device design."
+    ].join(" ")
+  });
+  const scored = polymarket.rankCandidate(polymarket.normalizeMarket({
+    id: "google-gemini-maybe",
+    question: "Next Google Gemini Pro Model: Arena Debut?",
+    description: "Google artificial intelligence model market.",
+    outcomes: "[\"Yes\", \"No\"]",
+    outcomePrices: "[\"0.31\", \"0.69\"]",
+    volume: "500000",
+    liquidity: "30000",
+    active: true,
+    closed: false
+  }), analyzed);
+
+  assert.equal(scored.matchTier, "maybe");
+  assert.ok(scored.confidence < 55);
+  assert.ok(scored.scoreBreakdown.entities > 0 || scored.scoreBreakdown.overlap > 0 || scored.scoreBreakdown.keywords > 0);
+});
+
+test("rankCandidates can include maybe matches without promoting rejected markets", () => {
+  const analyzed = signals.analyzeArticle({
+    title: "The Google Pixel Watch 5 may have been spoiled by the creator of Borderlands",
+    cleanText: "The article focused on Google Pixel Watch hardware, Wear OS, battery life, and Android device design."
+  });
+  const ranked = polymarket.rankCandidates([
+    polymarket.normalizeMarket({
+      id: "google-maybe",
+      question: "Next Google Gemini Pro Model: Arena Debut?",
+      outcomes: "[\"Yes\", \"No\"]",
+      outcomePrices: "[\"0.31\", \"0.69\"]",
+      volume: "500000",
+      active: true,
+      closed: false
+    }),
+    polymarket.normalizeMarket({
+      id: "rihanna-reject",
+      question: "Will Rihanna release a new album before GTA VI?",
+      outcomes: "[\"Yes\", \"No\"]",
+      outcomePrices: "[\"0.51\", \"0.49\"]",
+      volume: "5000000",
+      active: true,
+      closed: false
+    })
+  ], analyzed, {
+    minConfidence: 35,
+    includeMaybe: true,
+    maxResults: 5
+  });
+
+  assert.deepEqual(ranked.map((candidate) => candidate.id), ["google-maybe"]);
+  assert.equal(ranked[0].matchTier, "maybe");
+});
+
+test("product-specific company matches are capped to maybe when the market misses the product", () => {
+  const analyzed = signals.analyzeArticle({
+    title: "The Google Pixel Watch 5 may have been spoiled by the creator of Borderlands",
+    cleanText: [
+      "A video game creator appeared to show unreleased Google Pixel Watch hardware.",
+      "The article focused on Wear OS, Android, battery life, display details, and Google device design."
+    ].join(" ")
+  });
+  const scored = polymarket.rankCandidate(polymarket.normalizeMarket({
+    id: "google-stock",
+    question: "Google (GOOGL) closes above $200 on June 1?",
+    description: "Alphabet stock price market.",
+    outcomes: "[\"Yes\", \"No\"]",
+    outcomePrices: "[\"0.31\", \"0.69\"]",
+    volume: "2500000",
+    liquidity: "150000",
+    active: true,
+    closed: false
+  }), analyzed);
+
+  assert.equal(scored.matchTier, "maybe");
+  assert.ok(scored.confidence <= 54);
+  assert.ok(scored.scoreBreakdown.relevanceGateReasons.includes("missing-specific-product"));
+});

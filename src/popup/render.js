@@ -520,6 +520,10 @@
     return outcomes.slice(2);
   }
 
+  function scoreBadgeLabel(candidate) {
+    return candidate && candidate.matchTier === "maybe" ? "Maybe" : "Match";
+  }
+
   function appendCardContents(card, candidate, options = {}) {
     const titleText = options.titleText || candidate.eventTitle || candidate.title || candidate.question || "Untitled market";
 
@@ -589,7 +593,7 @@
     const scoreValue = document.createElement("strong");
     scoreValue.textContent = score ? String(score) : "--";
     const scoreLabel = document.createElement("span");
-    scoreLabel.textContent = "Match";
+    scoreLabel.textContent = scoreBadgeLabel(candidate);
     scoreBadge.append(scoreValue, scoreLabel);
 
     const open = document.createElement("span");

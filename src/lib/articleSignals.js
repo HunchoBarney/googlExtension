@@ -48,7 +48,11 @@
   const SPORTS = [
     "NBA", "NFL", "MLB", "NHL", "EPL", "Champions League", "World Cup", "Super Bowl", "March Madness",
     "Lakers", "Celtics", "Knicks", "Warriors", "Yankees", "Dodgers", "Mets", "Chiefs", "Bills", "Eagles",
-    "Cowboys", "49ers", "Arsenal", "Chelsea", "Liverpool", "Manchester City", "Real Madrid", "Barcelona"
+    "Cowboys", "49ers", "Spurs", "Arsenal", "Chelsea", "Liverpool", "Manchester City", "Real Madrid", "Barcelona"
+  ];
+  const SPORTS_ANCHOR_TERMS = [
+    "nba", "nfl", "mlb", "nhl", "epl", "champions league", "world cup", "super bowl", "march madness",
+    "playoffs", "finals"
   ];
   const TICKER_ALIASES = new Map(COMPANIES.map(([name, ticker]) => [ticker, name]));
   for (const [, ticker] of CRYPTO) {
@@ -74,7 +78,7 @@
     ],
     "AI/technology": [
       "ai", "artificial intelligence", "chip", "semiconductor", "gpu", "model", "openai", "anthropic", "data center",
-      "software", "robot", "technology"
+      "software", "robot", "technology", "pixel", "watch", "wear os", "android", "hardware", "device", "gadget"
     ],
     sports: [
       "nba", "nfl", "mlb", "nhl", "game", "match", "season", "playoffs", "championship", "score", "league",
@@ -86,7 +90,7 @@
     ],
     entertainment: [
       "movie", "film", "film festival", "cannes", "palme d'or", "album", "box office", "oscar", "grammy",
-      "celebrity", "tv", "show", "series", "actor", "actress", "james bond", "streaming", "netflix", "disney", "music", "studio", "bidding war", "trailer", "release"
+      "celebrity", "tv", "show", "series", "actor", "actress", "james bond", "streaming", "netflix", "disney", "music", "studio", "bidding war", "trailer", "release", "video game", "gaming", "multiplayer", "sequel", "trilogy", "remake", "voice cast"
     ],
     "weather/climate": [
       "hurricane", "storm", "temperature", "rain", "snow", "wildfire", "climate", "weather", "heat", "flood",
@@ -409,8 +413,9 @@
     };
   }
 
-  function countOccurrences(text, phrase) {
-    const pattern = new RegExp(`\\b${escapeRegExp(phrase)}\\b`, "gi");
+  function countOccurrences(text, phrase, options = {}) {
+    const flags = options.caseSensitive ? "g" : "gi";
+    const pattern = new RegExp(`\\b${escapeRegExp(phrase)}\\b`, flags);
     const matches = text.match(pattern);
     return matches ? matches.length : 0;
   }
@@ -452,16 +457,16 @@
     return { add, values };
   }
 
-  function extractKnownEntities(store, text, list, type, baseWeight = 6) {
+  function extractKnownEntities(store, text, list, type, baseWeight = 6, options = {}) {
     for (const item of list) {
       const name = Array.isArray(item) ? item[0] : item;
       const alias = Array.isArray(item) ? item[1] : "";
-      const count = countOccurrences(text, name);
+      const count = countOccurrences(text, name, options);
       if (count) {
         store.add(type, name, baseWeight + count * 2, alias);
       }
       if (alias && alias !== name) {
-        const aliasCount = countOccurrences(text, alias);
+        const aliasCount = countOccurrences(text, alias, options);
         if (aliasCount) {
           store.add(type, name, baseWeight + aliasCount * 2, alias);
         }
@@ -504,7 +509,7 @@
     extractKnownEntities(store, combined, CRYPTO, "crypto", 9);
     extractKnownEntities(store, combined, COUNTRY_NAMES, "place", 7);
     extractKnownEntities(store, combined, INSTITUTIONS, "institution", 7);
-    extractKnownEntities(store, combined, SPORTS, "sports", 8);
+    extractKnownEntities(store, combined, SPORTS, "sports", 8, { caseSensitive: true });
     extractPatternEntities(store, combined);
 
     const all = store.values().sort((a, b) => b.weight - a.weight || b.count - a.count);
@@ -546,6 +551,9 @@
     scores.sports += entities.sports.length * 9;
     scores.geopolitics += entities.places.length * 2 + entities.institutions.filter((entity) => ["NATO", "UN", "EU"].includes(entity.text)).length * 6;
     scores["economy/markets"] += entities.institutions.filter((entity) => ["Fed", "Federal Reserve", "FOMC", "ECB", "Treasury"].includes(entity.text)).length * 8;
+    if (!hasSportsAnchor(haystack, canonicalKey(title), entities)) {
+      scores.sports = Math.min(scores.sports, 1);
+    }
 
     const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const [label, score] = sorted[0];
@@ -554,6 +562,14 @@
       score,
       scores
     };
+  }
+
+  function hasSportsAnchor(haystack, titleKey, entities) {
+    if (entities && entities.sports && entities.sports.length) {
+      return true;
+    }
+    const text = canonicalKey(`${titleKey} ${haystack || ""}`);
+    return SPORTS_ANCHOR_TERMS.some((term) => textHasTerm(text, term));
   }
 
   function clamp(value, min, max) {
@@ -664,15 +680,19 @@
     const titleKey = canonicalKey(title);
     const keywordSet = keywordSetForClassifier(keywords);
     const topicLabel = topic && topic.label;
+    const sportsAnchor = hasSportsAnchor(haystack, titleKey, entities);
     const labelScores = [];
 
     for (const label of model.labels) {
       const termScore = scoreClassifierTerms(label.terms || [], haystack, titleKey, keywordSet);
       const entityScore = scoreClassifierEntities(label, entities);
       const topicBoost = topicLabel === label.topic ? 0.22 : 0;
-      const angles = classifyMarketAngles(label, haystack, titleKey, keywordSet);
+      const angles = label.topic === "sports" && !sportsAnchor
+        ? []
+        : classifyMarketAngles(label, haystack, titleKey, keywordSet);
       const angleBoost = Math.min(0.28, angles.reduce((sum, angle) => sum + angle.score, 0) * 0.25);
-      const score = termScore.score + entityScore.score + topicBoost + angleBoost;
+      const rawScore = termScore.score + entityScore.score + topicBoost + angleBoost;
+      const score = label.topic === "sports" && !sportsAnchor ? rawScore * 0.2 : rawScore;
 
       labelScores.push({
         topic: label.topic,
@@ -723,10 +743,23 @@
   }
 
   function compactQuery(parts) {
-    return normalizeWhitespace(parts.filter(Boolean).join(" "))
+    const query = normalizeWhitespace(parts.filter(Boolean).join(" "))
       .replace(/[^\w$.\s/-]/g, "")
-      .slice(0, 80)
       .trim();
+    const tokens = query.split(/\s+/).filter(Boolean);
+    const deduped = [];
+    const seen = new Set();
+    for (const token of tokens) {
+      const key = canonicalKey(token);
+      if (key.length > 2 && seen.has(key)) {
+        continue;
+      }
+      if (key.length > 2) {
+        seen.add(key);
+      }
+      deduped.push(token);
+    }
+    return normalizeWhitespace(deduped.join(" ")).slice(0, 80).trim();
   }
 
   function stableQuoteAssetKey(entity) {
@@ -832,6 +865,12 @@
     }
   }
 
+  function productQueryFromTitle(title) {
+    const clean = normalizeWhitespace(title);
+    const match = clean.match(/\b(Google\s+Pixel\s+Watch\s+\d*|Pixel\s+Watch\s+\d*|Apple\s+Watch\s+\d*|iPhone\s+\d*|Galaxy\s+Watch\s+\d*|PlayStation\s+\d*|Xbox\s+[A-Za-z0-9 ]{1,20})\b/i);
+    return match ? normalizeWhitespace(match[1]) : "";
+  }
+
   function generateQueries(article) {
     const queries = [];
     const title = article.title || "";
@@ -843,17 +882,25 @@
     const topEntities = (centralEntities.length ? centralEntities : (entities.top || [])).slice(0, 6);
     const cryptoEntities = topEntities.filter((entity) => entity.type === "crypto");
     const companyEntities = topEntities.filter((entity) => entity.type === "company");
+    const sportsEntities = topEntities.filter((entity) => entity.type === "sports");
     const topKeywords = keywords.slice(0, 8);
     const hasCryptoEntities = Boolean(cryptoEntities.length || (entities.crypto && entities.crypto.length));
     const topicLabel = article.topic && article.topic.label;
     const classifier = article.classifier || article.localClassifier || null;
     const classifierStrong = classifier && classifier.confidence >= 0.45 && classifier.topic && classifier.topic !== "general";
+    const classifierTopic = classifier && classifier.topic;
     const titleHasCryptoAngle = /\b(bitcoin|btc|ethereum|eth|crypto|token|blockchain|defi|stablecoin)\b/i.test(titleKey);
     const hasElectionLanguage = /\b(election|by-election|vote|voter|poll|campaign|ballot|primary|debate)\b/i.test(articleKey);
     const genericSoloEntities = new Set(["house", "senate", "congress", "us", "u.s.", "un", "eu"]);
+    const genericStandaloneHints = new Set(["winner", "matchup", "matchup/winner", "championship", "price target", "stock price", "ai model", "chips"]);
+    const productQuery = productQueryFromTitle(title);
 
     function entityAppearsInTitle(entity) {
       return textHasEntity(titleKey, entity);
+    }
+
+    function hasEarningsIntent() {
+      return topicLabel === "companies/earnings" || /\b(earnings|revenue|profit|guidance|quarter|beat|miss|stock price|shares)\b/i.test(articleKey);
     }
 
     function shouldUseEntityQuery(entity) {
@@ -873,10 +920,21 @@
       if ((entity.type === "properNoun" || entity.type === "organization") && !inTitle) {
         return false;
       }
+      if (entity.type === "sports" && topicLabel !== "sports" && classifierTopic !== "sports") {
+        return false;
+      }
       if (genericSoloEntities.has(canonicalKey(entity.text))) {
         return false;
       }
       return true;
+    }
+
+    function canUseStandaloneHint(hint) {
+      return !genericStandaloneHints.has(canonicalKey(hint));
+    }
+
+    if (productQuery) {
+      addQuery(queries, productQuery);
     }
 
     for (const cryptoEntity of cryptoEntities.filter(shouldUseEntityQuery).slice(0, 2)) {
@@ -894,22 +952,30 @@
     }
 
     if (companyEntities[0] && (!hasCryptoEntities || entityAppearsInTitle(companyEntities[0]))) {
-      addQuery(queries, [companyEntities[0].text, "earnings"]);
+      if (hasEarningsIntent()) {
+        addQuery(queries, [companyEntities[0].text, "earnings"]);
+      } else if (topicLabel === "AI/technology" || productQuery) {
+        addQuery(queries, [companyEntities[0].text, "technology"]);
+      }
       addQuery(queries, [companyEntities[0].text, topKeywords[0] && topKeywords[0].text]);
     }
 
-    if (entities.sports && entities.sports[0]) {
-      addQuery(queries, [entities.sports[0].text, entities.sports[1] && entities.sports[1].text]);
+    if ((topicLabel === "sports" || classifierTopic === "sports") && sportsEntities[0]) {
+      addQuery(queries, [sportsEntities[0].text, sportsEntities[1] && sportsEntities[1].text]);
     }
 
     if (classifierStrong) {
       const primaryEntity = topEntities.find((entity) => shouldUseEntityQuery(entity));
       for (const hint of (classifier.queryHints || []).slice(0, 4)) {
-        addQuery(queries, [primaryEntity && primaryEntity.text, hint]);
+        if (primaryEntity) {
+          addQuery(queries, [primaryEntity.text, hint]);
+        } else if (canUseStandaloneHint(hint)) {
+          addQuery(queries, hint);
+        }
       }
       for (const angle of (classifier.marketAngles || []).slice(0, 3)) {
-        if (angle !== "general") {
-          addQuery(queries, [primaryEntity && primaryEntity.text, angle]);
+        if (angle !== "general" && primaryEntity) {
+          addQuery(queries, [primaryEntity.text, angle]);
         }
       }
     }
@@ -928,7 +994,12 @@
     }
 
     if (article.topic && article.topic.label === "geopolitics" && entities.places && entities.places[0]) {
+      addQuery(queries, entities.places[0].text);
+      addQuery(queries, [entities.places[0].text, "conflict"]);
       addQuery(queries, [entities.places[0].text, "war"]);
+      if (/\b(oil|gas|energy|crude|fuel)\b/i.test(articleKey)) {
+        addQuery(queries, [entities.places[0].text, "energy"]);
+      }
     }
     if (article.topic && article.topic.label === "politics/elections" && hasElectionLanguage) {
       addQuery(queries, "election");

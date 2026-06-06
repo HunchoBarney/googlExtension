@@ -101,7 +101,7 @@ function setupPopup({ extractResult, searchResult, searchError } = {}) {
     async searchAndRank(article, options) {
       assert.equal(article.queries[0], "Bitcoin");
       calls.articleSearches.push({ article, options });
-      assert.equal(options.maxResults, 72);
+      assert.equal(options.maxResults, 160);
       if (searchError) {
         throw searchError;
       }
@@ -194,8 +194,11 @@ test("popup controller runs extraction, signal analysis, search, and result rend
   assert.equal(calls.executeScript[0].target.tabId, 123);
   assert.deepEqual(calls.analyzeOptions, [{ analysisStrategy: "classifier", classifierModel: null }]);
   assert.equal(calls.articleSearches[0].options.minConfidence, 55);
-  assert.equal(calls.articleSearches[0].options.maxResults, 72);
-  assert.equal(calls.groupCandidates[0].options.maxGroups, 4);
+  assert.equal(calls.articleSearches[0].options.includeSimilar, true);
+  assert.equal(calls.articleSearches[0].options.maxResults, 160);
+  assert.equal(calls.articleSearches[0].options.searchLimitPerType, 8);
+  assert.equal(calls.articleSearches[0].options.similarLimit, 20);
+  assert.equal(calls.groupCandidates[0].options.maxGroups, 160);
   assert.deepEqual(calls.results[0].candidates, [candidate]);
   assert.equal(calls.results[0].options.title, "Related markets");
   assert.equal(calls.empty.length, 0);
@@ -218,32 +221,67 @@ test("popup refresh reruns local model analysis", async () => {
   assert.deepEqual(calls.analyzeOptions.map((options) => options.analysisStrategy), ["classifier", "classifier"]);
 });
 
-test("popup fills sparse related results with lower-confidence relevant groups", async () => {
+test("popup fills sparse related results with maybe-related groups", async () => {
   const strongCandidate = {
     id: "btc-strong",
     title: "Will Bitcoin hit $150k?",
     confidence: 70,
+    matchTier: "strong",
     url: "https://polymarket.com/event/bitcoin-150k"
   };
-  const fillerCandidate = {
-    id: "btc-filler",
+  const maybeCandidate = {
+    id: "btc-maybe",
     title: "Bitcoin above $120k?",
-    confidence: 50,
+    confidence: 46,
+    matchTier: "maybe",
     url: "https://polymarket.com/event/bitcoin-120k"
   };
   const { calls, refreshButton } = setupPopup({
     searchResult(options) {
       return options.minConfidence === 55
         ? [strongCandidate]
-        : [strongCandidate, fillerCandidate];
+        : [strongCandidate, maybeCandidate];
     }
   });
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "filled related popup run");
 
-  assert.deepEqual(calls.articleSearches.map((call) => call.options.minConfidence), [55, 48]);
-  assert.deepEqual(calls.results[0].candidates, [strongCandidate, fillerCandidate]);
+  assert.deepEqual(calls.articleSearches.map((call) => call.options.minConfidence), [55, 35]);
+  assert.deepEqual(calls.articleSearches.map((call) => call.options.includeSimilar), [true, true]);
+  assert.equal(calls.articleSearches[1].options.includeMaybe, true);
+  assert.deepEqual(calls.results[0].candidates, [strongCandidate, maybeCandidate]);
+  assert.equal(calls.results[0].candidates[1].matchTier, "maybe");
   assert.equal(calls.statuses.at(-1).detail, "2 related markets found");
+});
+
+test("popup progressively reveals all related groups instead of capping at four", async () => {
+  const relatedCandidates = Array.from({ length: 12 }, (_item, index) => ({
+    id: `related-${index}`,
+    title: `Related market ${index + 1}`,
+    confidence: 90 - index,
+    matchTier: index < 8 ? "strong" : "maybe",
+    url: `https://polymarket.com/event/related-${index}`
+  }));
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: relatedCandidates });
+
+  await waitFor(() => (
+    refreshButton.disabled === false &&
+    calls.results.length === 1 &&
+    calls.results[0].candidates.length === 8
+  ), "initial related batch");
+
+  assert.equal(calls.statuses.at(-1).detail, "12 related markets found");
+  assert.equal(calls.groupCandidates[0].options.maxGroups, 160);
+  assert.deepEqual(calls.results[0].candidates.map((candidate) => candidate.id), relatedCandidates.slice(0, 8).map((candidate) => candidate.id));
+
+  const loadMore = dom.window.document.querySelector("[data-related-load-more]");
+  assert.ok(loadMore);
+  loadMore.click();
+
+  await waitFor(() => calls.results.length === 2 && calls.results[1].candidates.length === 12, "expanded related batch");
+
+  assert.deepEqual(calls.results[1].candidates.map((candidate) => candidate.id), relatedCandidates.map((candidate) => candidate.id));
+  assert.equal(dom.window.document.querySelector("[data-related-load-more]"), null);
 });
 
 test("popup controller renders no-readable article state without searching", async () => {

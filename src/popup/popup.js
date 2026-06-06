@@ -2,10 +2,13 @@
   "use strict";
 
   const MIN_CONFIDENCE = 55;
-  const FILLER_MIN_CONFIDENCE = 48;
+  const MAYBE_MIN_CONFIDENCE = 35;
   const MAX_RESULT_GROUPS = 4;
   const MAX_RANKED_MARKETS = 12;
-  const MAX_RELATED_RANKED_MARKETS = 72;
+  const MAX_RELATED_RANKED_MARKETS = 160;
+  const MAX_RELATED_RESULT_GROUPS = 160;
+  const RELATED_INITIAL_VISIBLE_GROUPS = 8;
+  const RELATED_BATCH_SIZE = 8;
   const LOCAL_MODEL_STRATEGY = "classifier";
   const CLASSIFIER_MODEL_FILE = "src/lib/articleAngleClassifierData.json";
   const READABILITY_FILE = "src/vendor/Readability.js";
@@ -40,9 +43,11 @@
   let classifierModelPromise = null;
   let latestRelatedGroups = [];
   let latestRelatedArticle = null;
+  let latestRelatedVisibleCount = RELATED_INITIAL_VISIBLE_GROUPS;
   let latestRenderedGroups = [];
   let latestRenderOptions = { title: "Related markets" };
   let sortModeIndex = 0;
+  let relatedScrollObserver = null;
 
   function setControlsDisabled(disabled) {
     refreshButton.disabled = disabled;
@@ -242,14 +247,80 @@
     return copy.sort((a, b) => scoreForSort(b) - scoreForSort(a) || volumeForSort(b) - volumeForSort(a));
   }
 
+  function disconnectRelatedScroller() {
+    if (relatedScrollObserver && relatedScrollObserver.disconnect) {
+      relatedScrollObserver.disconnect();
+    }
+    relatedScrollObserver = null;
+  }
+
+  function clearRelatedPagination() {
+    disconnectRelatedScroller();
+    for (const node of Array.from(resultsRegion.querySelectorAll("[data-related-pagination]"))) {
+      node.remove();
+    }
+  }
+
+  function loadMoreRelatedGroups() {
+    if (!latestRelatedGroups.length || latestRelatedVisibleCount >= latestRelatedGroups.length) {
+      return;
+    }
+    latestRelatedVisibleCount = Math.min(latestRelatedVisibleCount + RELATED_BATCH_SIZE, latestRelatedGroups.length);
+    renderGroups(latestRelatedGroups, latestRenderOptions);
+  }
+
+  function installRelatedPagination(totalCount) {
+    if (latestRelatedVisibleCount >= totalCount) {
+      return;
+    }
+
+    const remaining = totalCount - latestRelatedVisibleCount;
+    const row = document.createElement("div");
+    row.className = "related-pagination";
+    row.dataset.relatedPagination = "true";
+
+    const button = document.createElement("button");
+    button.className = "related-load-more";
+    button.type = "button";
+    button.dataset.relatedLoadMore = "true";
+    button.textContent = `Show ${Math.min(RELATED_BATCH_SIZE, remaining)} more`;
+    button.addEventListener("click", loadMoreRelatedGroups);
+
+    const sentinel = document.createElement("div");
+    sentinel.className = "related-scroll-sentinel";
+    sentinel.dataset.relatedScrollSentinel = "true";
+    sentinel.setAttribute("aria-hidden", "true");
+
+    row.append(button, sentinel);
+    resultsRegion.append(row);
+
+    if (typeof global.IntersectionObserver === "function") {
+      relatedScrollObserver = new global.IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMoreRelatedGroups();
+        }
+      }, { root: null, rootMargin: "360px 0px" });
+      relatedScrollObserver.observe(sentinel);
+    }
+  }
+
   function renderGroups(groups, options = {}) {
+    clearRelatedPagination();
     latestRenderedGroups = groups.slice();
     latestRenderOptions = { ...options };
-    renderer.renderResults(resultsRegion, sortedGroups(groups), {
+    const sorted = sortedGroups(groups);
+    const progressive = Boolean(options.progressive);
+    const visibleCount = progressive
+      ? Math.min(latestRelatedVisibleCount, sorted.length)
+      : sorted.length;
+    renderer.renderResults(resultsRegion, sorted.slice(0, visibleCount), {
       ...options,
       detail: sortLabel(),
       showMatchLimitNote: false
     });
+    if (progressive) {
+      installRelatedPagination(sorted.length);
+    }
   }
 
   function groupIdentity(group) {
@@ -261,7 +332,7 @@
     ].filter(Boolean).join("|").toLowerCase();
   }
 
-  function mergeGroups(primaryGroups, fillerGroups) {
+  function mergeGroups(primaryGroups, fillerGroups, maxGroups = Number.POSITIVE_INFINITY) {
     const seen = new Set();
     const merged = [];
     for (const group of [...primaryGroups, ...fillerGroups]) {
@@ -271,7 +342,7 @@
       }
       seen.add(key);
       merged.push(group);
-      if (merged.length >= MAX_RESULT_GROUPS) {
+      if (merged.length >= maxGroups) {
         break;
       }
     }
@@ -282,36 +353,43 @@
     const candidates = await polymarket.searchAndRank(article, {
       fetchImpl: fetch.bind(global),
       minConfidence: MIN_CONFIDENCE,
+      includeSimilar: true,
+      searchLimitPerType: 8,
+      similarLimit: 20,
       maxResults: MAX_RELATED_RANKED_MARKETS
     });
     let resultGroups = polymarket.groupCandidatesByEvent
       ? polymarket.groupCandidatesByEvent(candidates, {
-        maxGroups: MAX_RESULT_GROUPS,
+        maxGroups: MAX_RELATED_RESULT_GROUPS,
         article,
         minParentConfidence: MIN_CONFIDENCE
       })
-      : candidates.slice(0, MAX_RESULT_GROUPS);
+      : candidates.slice(0, MAX_RELATED_RESULT_GROUPS);
 
-    if (resultGroups.length >= MAX_RESULT_GROUPS || FILLER_MIN_CONFIDENCE >= MIN_CONFIDENCE) {
+    if (resultGroups.length >= MAX_RELATED_RESULT_GROUPS || MAYBE_MIN_CONFIDENCE >= MIN_CONFIDENCE) {
       return { candidates, resultGroups };
     }
 
     try {
       const fillerCandidates = await polymarket.searchAndRank(article, {
         fetchImpl: fetch.bind(global),
-        minConfidence: FILLER_MIN_CONFIDENCE,
+        minConfidence: MAYBE_MIN_CONFIDENCE,
+        includeMaybe: true,
+        includeSimilar: true,
+        searchLimitPerType: 8,
+        similarLimit: 20,
         maxResults: MAX_RELATED_RANKED_MARKETS
       });
       const fillerGroups = polymarket.groupCandidatesByEvent
         ? polymarket.groupCandidatesByEvent(fillerCandidates, {
-          maxGroups: MAX_RESULT_GROUPS,
+          maxGroups: MAX_RELATED_RESULT_GROUPS,
           article,
-          minParentConfidence: FILLER_MIN_CONFIDENCE
+          minParentConfidence: MAYBE_MIN_CONFIDENCE
         })
-        : fillerCandidates.slice(0, MAX_RESULT_GROUPS);
-      resultGroups = mergeGroups(resultGroups, fillerGroups);
+        : fillerCandidates.slice(0, MAX_RELATED_RESULT_GROUPS);
+      resultGroups = mergeGroups(resultGroups, fillerGroups, MAX_RELATED_RESULT_GROUPS);
       return {
-        candidates: mergeGroups(candidates, fillerCandidates),
+        candidates: mergeGroups(candidates, fillerCandidates, MAX_RELATED_RANKED_MARKETS),
         resultGroups
       };
     } catch (error) {
@@ -321,8 +399,10 @@
 
   async function run() {
     setControlsDisabled(true);
+    clearRelatedPagination();
     latestRelatedGroups = [];
     latestRelatedArticle = null;
+    latestRelatedVisibleCount = RELATED_INITIAL_VISIBLE_GROUPS;
     setActiveTab("related");
 
     try {
@@ -354,7 +434,8 @@
 
       renderStatus("complete", "Local scan complete", relatedDetail(enrichedResultGroups.length));
       renderGroups(enrichedResultGroups, {
-        title: "Related markets"
+        title: "Related markets",
+        progressive: true
       });
     } catch (error) {
       if (error instanceof ArticleError) {
@@ -383,6 +464,7 @@
     }
 
     setControlsDisabled(true);
+    clearRelatedPagination();
     setActiveTab("search");
     renderStatus("searching", "Searching markets", `Looking for "${normalized}".`);
 
@@ -427,6 +509,7 @@
 
   async function runTrendingMarkets() {
     setControlsDisabled(true);
+    clearRelatedPagination();
     setActiveTab("trending");
     renderStatus("searching", "Loading trending", "Checking active Polymarket events.");
 
@@ -479,7 +562,8 @@
     if (latestRelatedGroups.length) {
       renderStatus("complete", "Local scan complete", relatedDetail(latestRelatedGroups.length));
       renderGroups(latestRelatedGroups, {
-        title: "Related markets"
+        title: "Related markets",
+        progressive: true
       });
       return;
     }
@@ -505,6 +589,9 @@
     event.preventDefault();
     sortModeIndex = (sortModeIndex + 1) % SORT_MODES.length;
     if (latestRenderedGroups.length) {
+      if (latestRenderOptions.progressive) {
+        latestRelatedVisibleCount = Math.min(RELATED_INITIAL_VISIBLE_GROUPS, latestRelatedGroups.length || RELATED_INITIAL_VISIBLE_GROUPS);
+      }
       renderGroups(latestRenderedGroups, latestRenderOptions);
     }
   });

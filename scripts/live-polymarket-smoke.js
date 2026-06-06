@@ -17,19 +17,24 @@ const ENDPOINTS = [
   {
     source: "public-search",
     url(query) {
-      return `${polymarket.GAMMA_API}/public-search?q=${encodeURIComponent(query)}`;
+      const params = new URLSearchParams();
+      params.set("q", query);
+      params.set("events_status", "active");
+      params.set("limit_per_type", "8");
+      params.set("keep_closed_markets", "0");
+      params.set("search_profiles", "false");
+      params.set("search_tags", "false");
+      return `${polymarket.GAMMA_API}/public-search?${params.toString()}`;
     }
   },
   {
-    source: "events",
+    source: "events-similar",
     url(query) {
-      return `${polymarket.GAMMA_API}/events?limit=8&active=true&closed=false&q=${encodeURIComponent(query)}`;
-    }
-  },
-  {
-    source: "markets",
-    url(query) {
-      return `${polymarket.GAMMA_API}/markets?limit=8&active=true&closed=false&q=${encodeURIComponent(query)}`;
+      const params = new URLSearchParams();
+      params.set("event_title", query);
+      params.set("closed", "false");
+      params.set("limit", "5");
+      return `${polymarket.GAMMA_API}/events/similar?${params.toString()}`;
     }
   }
 ];

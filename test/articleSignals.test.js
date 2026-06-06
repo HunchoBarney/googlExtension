@@ -185,3 +185,34 @@ test("keeps queries title-centered when body text has incidental people, places,
   assert.ok(article.queries.every((query) => !/^Ethereum(?:\s|$)/i.test(query)));
   assert.ok(article.queries.every((query) => !/^Donald Trump/i.test(query)));
 });
+
+test("does not turn product and video-game language into a sports matchup query", () => {
+  const article = signals.analyzeArticle({
+    title: "The Google Pixel Watch 5 may have been spoiled by the creator of Borderlands",
+    cleanText: [
+      "A video game creator appeared to show unreleased Google Pixel Watch hardware in a short clip.",
+      "The leak focused on Wear OS, battery life, display details, and Android device design.",
+      "The article was about a consumer technology product rather than a sports game or match."
+    ].join(" ")
+  });
+
+  assert.notEqual(article.topic.label, "sports");
+  assert.notEqual(article.classifier.topic, "sports");
+  assert.ok(article.queries.some((query) => /Google Pixel Watch|Pixel Watch|Google/i.test(query)));
+  assert.ok(article.queries.every((query) => !/\bwinner\b|\bmatchup\b|\bchampionship\b/i.test(query)));
+});
+
+test("generates entity and angle queries without sports leakage for energy conflict articles", () => {
+  const article = signals.analyzeArticle({
+    title: "Iran war cost lifts average household gas and energy bills",
+    cleanText: [
+      "The article connected Iran conflict risk with oil, gas, energy costs, and household inflation pressure.",
+      "Traders watched whether diplomatic conflict would affect crude supply and US energy prices."
+    ].join(" ")
+  });
+
+  assert.ok(article.queries.some((query) => /^Iran$/i.test(query) || /^Iran conflict$/i.test(query)));
+  assert.ok(article.queries.some((query) => /Iran.*war|Iran.*conflict|Iran.*energy/i.test(query)));
+  assert.ok(article.queries.every((query) => !/^Bills(?:\s|$)/i.test(query)));
+  assert.ok(article.queries.every((query) => query.length <= 80));
+});

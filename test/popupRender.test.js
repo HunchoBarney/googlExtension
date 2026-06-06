@@ -238,6 +238,32 @@ test("renders unavailable option prices as n/a instead of zero", () => {
   assert.doesNotMatch(text, /No0%/);
 });
 
+test("renders maybe-related cards with a Maybe badge label", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderResults(results, [{
+    title: "Next Google Gemini Pro Model: Arena Debut?",
+    url: "https://polymarket.com/event/google-gemini-pro-model",
+    primaryOutcome: "Yes",
+    secondaryOutcome: "No",
+    primaryPrice: 0.31,
+    secondaryPrice: 0.69,
+    primaryPercent: 31,
+    outcomeOptions: [
+      { label: "Yes", price: 0.31, percent: 31 },
+      { label: "No", price: 0.69, percent: 69 }
+    ],
+    movement: { direction: "flat", value: 0 },
+    confidence: 46,
+    matchTier: "maybe"
+  }]);
+
+  const score = results.querySelector(".market-score");
+  assert.match(score.textContent, /46/);
+  assert.match(score.textContent, /Maybe/);
+  assert.doesNotMatch(score.textContent, /Match/);
+});
+
 test("renders no-match and API error states in the market-first surface", () => {
   const { renderer, results } = setupRenderer();
 
