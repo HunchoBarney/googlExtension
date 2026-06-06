@@ -272,6 +272,39 @@ test("filters markets that are pending review or otherwise not live", () => {
   assert.deepEqual(ranked.map((candidate) => candidate.id), ["btc-live"]);
 });
 
+test("filters markets whose end date has passed even when API flags still say active", () => {
+  const analyzed = signals.analyzeArticle({
+    title: "Strait of Hormuz shipping traffic returns to normal",
+    cleanText: "Shipping traffic through the Strait of Hormuz returned to normal after regional disruption."
+  });
+  const expired = polymarket.normalizeMarket({
+    id: "hormuz-expired",
+    question: "How many ships transit the Strait of Hormuz the week of May 25?",
+    outcomes: "[\"Yes\", \"No\"]",
+    outcomePrices: "[\"0.9\", \"0.1\"]",
+    volume: "28000000",
+    active: true,
+    closed: false,
+    endDate: "2026-05-31"
+  });
+  const live = polymarket.normalizeMarket({
+    id: "hormuz-live",
+    question: "Will Strait of Hormuz traffic stay normal through 2999?",
+    outcomes: "[\"Yes\", \"No\"]",
+    outcomePrices: "[\"0.44\", \"0.56\"]",
+    volume: "250000",
+    active: true,
+    closed: false,
+    endDate: "2999-12-31"
+  });
+
+  const ranked = polymarket.rankCandidates([expired, live], analyzed, { minConfidence: 30, maxResults: 5 });
+
+  assert.equal(expired.active, false);
+  assert.equal(expired.closed, true);
+  assert.deepEqual(ranked.map((candidate) => candidate.id), ["hormuz-live"]);
+});
+
 test("keeps active approved markets displayable when Polymarket marks ready false", () => {
   const market = polymarket.normalizeMarket({
     id: "active-ready-false",

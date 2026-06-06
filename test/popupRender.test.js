@@ -64,21 +64,24 @@ test("renders parent event cards with API image, option percentages, movement, a
   })]);
 
   const card = results.querySelector(".market-card");
+  assert.equal(card.tagName, "A");
   assert.equal(card.getAttribute("href"), "https://polymarket.com/event/bitcoin-targets");
   assert.equal(results.querySelector(".market-image").getAttribute("src"), image);
   assert.equal(results.querySelector(".market-image-fallback"), null);
   assert.match(card.textContent, /44%/);
   assert.match(card.textContent, /56%/);
   assert.ok(card.querySelector(".probability-track"));
-  assert.match(card.textContent, /12.6K traders/);
-  assert.match(card.textContent, /\$1.3M volume/);
+  assert.equal(card.querySelector(".market-meta-row"), null);
+  assert.doesNotMatch(card.textContent, /traders/);
+  assert.doesNotMatch(card.textContent, /volume/);
   assert.equal(card.querySelector(".market-score"), null);
   assert.equal(card.querySelector(".category-chip"), null);
+  assert.equal(card.querySelector(".open-link"), null);
   assert.doesNotMatch(card.textContent, /73/);
   assert.doesNotMatch(card.textContent, /Match/);
   assert.doesNotMatch(card.textContent, /Politics/);
   assert.doesNotMatch(card.textContent, /Iran/);
-  assert.match(card.textContent, /Open/);
+  assert.doesNotMatch(card.textContent, /Open/);
 });
 
 test("falls back to local icon when an API market image is unavailable", () => {

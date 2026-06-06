@@ -596,9 +596,7 @@ function validateExpandedState(expandedState, report, label = "Larger view") {
     expandedState.visual.tabCount !== 3 ||
     expandedState.visual.searchHeight < 40 ||
     expandedState.visual.scoreBadgeCount !== 0 ||
-    (expandedState.cardLinks.length > 0 && (
-      expandedState.visual.openLinkCount !== expandedState.cardLinks.length
-    ))
+    expandedState.visual.openLinkCount !== 0
   ) {
     throw new Error(`${label} missing target visual structure: ${JSON.stringify(expandedState.visual)}`);
   }
@@ -610,8 +608,12 @@ function validateExpandedState(expandedState, report, label = "Larger view") {
   )) {
     throw new Error(`${label} did not use loaded Polymarket images: ${JSON.stringify(expandedState.visual)}`);
   }
-  if (expandedState.cardLinks.length > 0 && expandedState.visual.traderMetaCount === 0) {
-    throw new Error(`${label} did not render trader metadata: ${JSON.stringify(expandedState.visual)}`);
+  if (
+    expandedState.visual.traderMetaCount !== 0 ||
+    expandedState.visual.volumeMetaCount !== 0 ||
+    expandedState.visual.metaText.length !== 0
+  ) {
+    throw new Error(`${label} rendered removed trader/volume metadata: ${JSON.stringify(expandedState.visual)}`);
   }
   if (expandedState.visual.activeTabText !== "Related") {
     throw new Error(`${label} active tab drifted from target: ${expandedState.visual.activeTabText}`);
@@ -961,25 +963,22 @@ async function runActionPopupSmoke({
     report.visual.tabCount !== 3 ||
     report.visual.searchHeight < 30 ||
     report.visual.scoreBadgeCount !== 0 ||
-    (report.cardLinks.length > 0 && (
-      report.visual.openLinkCount !== report.cardLinks.length
-    ))
+    report.visual.openLinkCount !== 0
   ) {
       throw new Error(`Extension popup missing target visual structure: ${JSON.stringify(report.visual)}`);
     }
     const displayGroupsWithImages = (report.displayGroups || []).filter((group) => group && group.image).length;
-    const displayGroupsWithTraders = (report.displayGroups || []).filter((group) => group && group.traderCount).length;
     if (report.cardLinks.length > 0 && (
       report.visual.remoteImageCount + report.visual.fallbackIconCount !== report.cardLinks.length ||
       (displayGroupsWithImages > 0 && report.visual.remoteImageCount === 0) ||
       (displayGroupsWithImages > 0 && report.visual.loadedRemoteImageCount === 0) ||
       report.visual.loadedRemoteImageCount !== report.visual.remoteImageCount ||
-      report.visual.matchLimitCount !== 0
+      report.visual.matchLimitCount !== 0 ||
+      report.visual.traderMetaCount !== 0 ||
+      report.visual.volumeMetaCount !== 0 ||
+      report.visual.metaText.length !== 0
     )) {
       throw new Error(`Extension popup card surface drifted from target visuals: ${JSON.stringify(report.visual)}`);
-    }
-    if (displayGroupsWithTraders > 0 && report.visual.traderMetaCount === 0) {
-      throw new Error(`Extension popup did not render trader metadata from Polymarket Data API: ${JSON.stringify(report.visual)}`);
     }
     if (report.visual.searchPlaceholder !== "Search any market") {
       throw new Error(`Extension popup missing target search placeholder: ${report.visual.searchPlaceholder}`);

@@ -120,6 +120,46 @@
     return null;
   }
 
+  function marketEndDate(raw = {}, event = {}) {
+    return raw.endDate ||
+      raw.endDateIso ||
+      raw.endDateTime ||
+      raw.closeTime ||
+      (event && (event.endDate || event.endDateIso || event.endDateTime || event.closeTime)) ||
+      "";
+  }
+
+  function parseMarketEndTime(value) {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? (value < 10000000000 ? value * 1000 : value) : null;
+    }
+    const text = String(value).trim();
+    if (!text) {
+      return null;
+    }
+    const dateOnly = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      const year = Number(dateOnly[1]);
+      const month = Number(dateOnly[2]) - 1;
+      const day = Number(dateOnly[3]);
+      const date = new Date(year, month, day, 23, 59, 59, 999);
+      if (date.getFullYear() === year && date.getMonth() === month && date.getDate() === day) {
+        return date.getTime();
+      }
+      return null;
+    }
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function isPastEndDate(value, nowMs = Date.now()) {
+    const endTime = parseMarketEndTime(value);
+    return endTime !== null && endTime < nowMs;
+  }
+
   function getTags(raw, event) {
     const tags = [];
     for (const source of [raw && raw.tags, event && event.tags]) {
@@ -239,13 +279,14 @@
     };
   }
 
-  function isClosed(raw, event) {
+  function isClosed(raw, event, endDate = marketEndDate(raw, event)) {
     return Boolean(
       raw.closed ||
       raw.archived ||
       raw.resolved ||
       raw.umaResolutionStatus === "resolved" ||
-      (event && (event.closed || event.archived || event.resolved))
+      (event && (event.closed || event.archived || event.resolved)) ||
+      isPastEndDate(endDate)
     );
   }
 
@@ -316,8 +357,8 @@
     ));
   }
 
-  function isActive(raw, event) {
-    if (isClosed(raw, event)) {
+  function isActive(raw, event, endDate = marketEndDate(raw, event)) {
+    if (isClosed(raw, event, endDate)) {
       return false;
     }
     if (isUnavailable(raw, event)) {
@@ -433,8 +474,9 @@
     const description = normalizeWhitespace([raw.description, event.description].filter(Boolean).join(" "));
     const category = normalizeWhitespace(raw.category || event.category || "");
     const tags = getTags(raw, event);
-    const closed = isClosed(raw, event);
-    const active = isActive(raw, event);
+    const endDate = marketEndDate(raw, event);
+    const closed = isClosed(raw, event, endDate);
+    const active = isActive(raw, event, endDate);
     const unavailable = isUnavailable(raw, event);
     const volume = firstNumber(raw.volumeNum, raw.volume, raw.volume24hr, event.volumeNum, event.volume, event.volume24hr);
     const volume24hr = firstNumber(raw.volume24hr, raw.volume24h, raw.oneDayVolume, raw.volume1d, event.volume24hr, event.volume24h, event.oneDayVolume, event.volume1d);
@@ -464,7 +506,7 @@
       volume1wk,
       liquidity,
       traderCount: traders,
-      endDate: raw.endDate || raw.endDateIso || raw.endDateTime || raw.closeTime || event.endDate || event.endDateIso || event.endDateTime || event.closeTime || "",
+      endDate,
       movement: parseMovement(raw),
       sourceQueries: meta.query ? [meta.query] : [],
       raw,

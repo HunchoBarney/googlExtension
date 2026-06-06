@@ -49,7 +49,7 @@
       const span = document.createElement("span");
       span.className = "scan-detail";
       if (/market|related|found/i.test(detail)) {
-        span.append(createUsersIcon("scan-detail-icon"));
+        span.append(createUsersIcon());
       }
       span.append(document.createTextNode(detail));
       status.append(divider, span);
@@ -95,40 +95,6 @@
       return "n/a";
     }
     return `${Math.round(numeric * 100)}%`;
-  }
-
-  function formatMetricNumber(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-      return "";
-    }
-    if (numeric >= 1000000) {
-      return `${(numeric / 1000000).toFixed(numeric >= 10000000 ? 0 : 1)}M`;
-    }
-    if (numeric >= 1000) {
-      return `${(numeric / 1000).toFixed(numeric >= 100000 ? 0 : 1)}K`;
-    }
-    return String(Math.round(numeric));
-  }
-
-  function formatCurrencyVolume(value) {
-    const formatted = formatMetricNumber(value);
-    return formatted ? `$${formatted} volume` : "";
-  }
-
-  function formatTraderCount(value, capped = false) {
-    const formatted = formatMetricNumber(value);
-    return formatted ? `${formatted}${capped ? "+" : ""} traders` : "";
-  }
-
-  function firstFiniteNumber(...values) {
-    for (const value of values) {
-      const numeric = Number(value);
-      if (Number.isFinite(numeric) && numeric > 0) {
-        return numeric;
-      }
-    }
-    return null;
   }
 
   function formatExpiry(candidate) {
@@ -186,31 +152,6 @@
     }
   }
 
-  function createOpenIcon() {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("class", "open-link-icon");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("aria-hidden", "true");
-
-    const first = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    first.setAttribute("d", "M14 4h6v6");
-    const second = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    second.setAttribute("d", "m10 14 10-10");
-    const third = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    third.setAttribute("d", "M20 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4");
-
-    for (const path of [first, second, third]) {
-      path.setAttribute("fill", "none");
-      path.setAttribute("stroke", "currentColor");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-      path.setAttribute("stroke-width", "2.2");
-    }
-
-    svg.append(first, second, third);
-    return svg;
-  }
-
   function createInlineIcon(className, paths) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", className);
@@ -236,20 +177,12 @@
     ]);
   }
 
-  function createUsersIcon(className = "meta-icon") {
+  function createUsersIcon(className = "scan-detail-icon") {
     return createInlineIcon(className, [
       "M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2",
       "M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
       "M22 21v-2a4 4 0 0 0-3-3.87",
       "M16 3.13a4 4 0 0 1 0 7.75"
-    ]);
-  }
-
-  function createVolumeIcon(className = "meta-icon") {
-    return createInlineIcon(className, [
-      "M5 20V10",
-      "M12 20V4",
-      "M19 20v-7"
     ]);
   }
 
@@ -390,55 +323,6 @@
       .slice(0, 3);
   }
 
-  function candidateTraderCount(candidate = {}) {
-    const raw = candidate.raw || {};
-    const event = candidate.event || {};
-    return firstFiniteNumber(
-      candidate.traderCount,
-      candidate.traders,
-      candidate.numTraders,
-      candidate.uniqueTraders,
-      candidate.userCount,
-      candidate.participantCount,
-      raw.traderCount,
-      raw.traders,
-      raw.numTraders,
-      raw.uniqueTraders,
-      raw.userCount,
-      raw.participantCount,
-      raw.holderCount,
-      raw.numHolders,
-      event.traderCount,
-      event.traders,
-      event.numTraders,
-      event.uniqueTraders,
-      event.userCount,
-      event.participantCount,
-      event.holderCount,
-      event.numHolders
-    );
-  }
-
-  function candidateVolume(candidate = {}) {
-    const raw = candidate.raw || {};
-    const event = candidate.event || {};
-    return firstFiniteNumber(
-      candidate.volume,
-      candidate.volume24hr,
-      candidate.volume1wk,
-      raw.volumeNum,
-      raw.volume,
-      raw.volume24hr,
-      raw.volume24h,
-      raw.oneDayVolume,
-      event.volumeNum,
-      event.volume,
-      event.volume24hr,
-      event.volume24h,
-      event.oneDayVolume
-    );
-  }
-
   function percentNumber(outcome) {
     if (!outcome) {
       return null;
@@ -537,39 +421,7 @@
       main.append(footer);
     }
 
-    const meta = document.createElement("div");
-    meta.className = "market-meta-row";
-    const traderText = formatTraderCount(candidateTraderCount(candidate), Boolean(candidate.traderCountCapped));
-    const volumeText = formatCurrencyVolume(candidateVolume(candidate));
-    if (traderText) {
-      const traders = document.createElement("span");
-      traders.className = "market-meta-item";
-      traders.append(createUsersIcon(), document.createTextNode(traderText));
-      meta.append(traders);
-    }
-    if (traderText && volumeText) {
-      const separator = document.createElement("span");
-      separator.className = "meta-separator";
-      separator.setAttribute("aria-hidden", "true");
-      meta.append(separator);
-    }
-    if (volumeText) {
-      const volume = document.createElement("span");
-      volume.className = "market-meta-item";
-      volume.append(createVolumeIcon(), document.createTextNode(volumeText));
-      meta.append(volume);
-    }
-    const side = document.createElement("div");
-    side.className = "market-side";
-    const open = document.createElement("span");
-    open.className = "open-link";
-    open.append("Open", createOpenIcon());
-    side.append(open);
-
-    card.append(main, side);
-    if (meta.childNodes.length) {
-      card.append(meta);
-    }
+    card.append(main);
   }
 
   function createMarketCard(candidate, options = {}) {

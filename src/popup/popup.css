@@ -518,9 +518,9 @@ button {
 .market-card {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
   column-gap: 14px;
-  row-gap: 10px;
-  min-height: 122px;
+  min-height: 104px;
   padding: 12px 15px 11px;
   border: 1px solid rgba(220, 227, 238, 0.96);
   border-radius: 12px;
@@ -549,7 +549,7 @@ button {
   grid-row: 1;
   width: 52px;
   height: 52px;
-  margin-top: 2px;
+  align-self: center;
   border-radius: 10px;
   object-fit: cover;
   background: linear-gradient(145deg, #111827, #020617);
@@ -599,8 +599,8 @@ button {
   display: flex;
   grid-column: 2 / -1;
   grid-row: 1;
-  min-height: 100%;
   flex-direction: column;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -718,81 +718,10 @@ button {
   line-height: 1.15;
 }
 
-.market-meta-row {
-  display: flex;
-  grid-column: 1 / -1;
-  grid-row: 2;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  margin-top: 2px;
-  padding-right: 68px;
-  padding-top: 0;
-  color: #647086;
-  font-size: 11.5px;
-  line-height: 1.1;
-}
-
-.market-meta-item {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.meta-icon {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-  color: #647086;
-}
-
 .market-footer span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.market-footer .meta-separator {
-  width: 1px;
-  height: 12px;
-  flex: 0 0 auto;
-  background: var(--line);
-}
-
-.market-meta-row .meta-separator {
-  width: 1px;
-  height: 16px;
-  flex: 0 0 auto;
-  background: var(--line);
-}
-
-.market-side {
-  display: grid;
-  grid-column: 2;
-  grid-row: 2;
-  align-content: end;
-  justify-items: end;
-  justify-self: end;
-  align-self: end;
-  min-width: 0;
-}
-
-.open-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--blue);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.open-link-icon {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
 }
 
 .match-limit-note {
@@ -1045,7 +974,6 @@ html[data-view-mode="expanded"] body {
   .market-card {
     grid-template-columns: 53px minmax(0, 1fr);
     column-gap: 11px;
-    row-gap: 9px;
     padding: 12px;
   }
 
@@ -1307,7 +1235,6 @@ html[data-view-mode="expanded"] body {
   .market-card {
     grid-template-columns: 44px minmax(0, 1fr);
     column-gap: 10px;
-    row-gap: 7px;
     min-height: 76px;
     padding: 8px 10px;
   }
@@ -1339,10 +1266,6 @@ html[data-view-mode="expanded"] body {
     font-size: 10px;
   }
 
-  .market-meta-row {
-    padding-right: 56px;
-  }
-
   .odds-row {
     margin-bottom: 4px;
     font-size: 10.5px;
@@ -1350,16 +1273,6 @@ html[data-view-mode="expanded"] body {
 
   .probability-track {
     height: 6px;
-  }
-
-  .open-link {
-    gap: 3px;
-    font-size: 11.5px;
-  }
-
-  .open-link-icon {
-    width: 12px;
-    height: 12px;
   }
 
   .match-limit-note {
