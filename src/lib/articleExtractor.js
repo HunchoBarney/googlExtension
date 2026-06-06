@@ -9,6 +9,14 @@
 })(typeof window !== "undefined" ? window : globalThis, function createArticleExtractor() {
   "use strict";
 
+  /** @typedef {import("./sharedTypes").PMArticleHeading} PMArticleHeading */
+  /** @typedef {import("./sharedTypes").PMArticleMetadata} PMArticleMetadata */
+  /** @typedef {import("./sharedTypes").PMArticleSource} PMArticleSource */
+  /** @typedef {import("./sharedTypes").PMExtractedArticle} PMExtractedArticle */
+  /** @typedef {{ title?: string|null, textContent?: string|null, excerpt?: string|null, byline?: string|null, siteName?: string|null, publishedTime?: string|null, length?: number|null }} PMReadabilityParseResult */
+  /** @typedef {{ parse(): PMReadabilityParseResult|null }} PMReadabilityInstance */
+  /** @typedef {new (doc: Document, options: { charThreshold: number, keepClasses: boolean }) => PMReadabilityInstance} PMReadabilityConstructor */
+
   const MIN_ARTICLE_CHARS = 300;
   const MIN_ARTICLE_WORDS = 45;
   const MIN_SELECTION_CHARS = 220;
@@ -68,6 +76,10 @@
     return "";
   }
 
+  /**
+   * @param {Document} doc
+   * @returns {PMArticleMetadata}
+   */
   function collectMetadata(doc) {
     const canonical = firstMeta(doc, ["link[rel='canonical']", "meta[property='og:url']"]);
     return {
@@ -99,6 +111,10 @@
     };
   }
 
+  /**
+   * @param {Document} doc
+   * @returns {PMArticleHeading[]}
+   */
   function collectHeadings(doc) {
     return Array.from(doc.querySelectorAll("h1, h2, h3"))
       .map((node) => ({
@@ -171,13 +187,18 @@
     return normalizeWhitespace(selection ? selection.toString() : "");
   }
 
+  /**
+   * @param {Document} doc
+   * @param {PMReadabilityConstructor|undefined} ReadabilityCtor
+   * @returns {{ title: string, text: string, excerpt: string, byline: string, siteName: string, publishedTime: string, length: number }|null}
+   */
   function runReadability(doc, ReadabilityCtor) {
     if (!ReadabilityCtor) {
       return null;
     }
 
     try {
-      const clone = doc.cloneNode(true);
+      const clone = /** @type {Document} */ (doc.cloneNode(true));
       for (const unwanted of Array.from(clone.querySelectorAll(UNWANTED_SELECTOR))) {
         unwanted.remove();
       }
@@ -203,6 +224,7 @@
   }
 
   function chooseText(readabilityText, fallbackText, selectionText) {
+    /** @type {PMArticleSource} */
     let source = "readability";
     let text = readabilityText;
 
@@ -224,6 +246,11 @@
     };
   }
 
+  /**
+   * @param {Document} doc
+   * @param {{ selectionText?: string, Readability?: PMReadabilityConstructor }} [options]
+   * @returns {PMExtractedArticle}
+   */
   function extractArticleFromDocument(doc, options = {}) {
     if (!doc || !doc.documentElement) {
       return {

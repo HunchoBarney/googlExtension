@@ -78,12 +78,12 @@ test("local keyword scoring is deterministic and exposes scoring components", ()
   assert.ok(first[0].features.contextDiversity > 0);
 });
 
-test("analyzeArticle always uses the local model-assisted keyword path", () => {
+test("analyzeArticle uses the local model-assisted keyword path when classifier strategy is requested", () => {
   const article = {
     title: "Fed waits for CPI before rate-cut decision",
     cleanText: "Federal Reserve officials said inflation and CPI data will guide whether the FOMC cuts interest rates this year."
   };
-  const analyzed = signals.analyzeArticle(article, { keywordAlgorithm: "legacy-keyword-mode" });
+  const analyzed = signals.analyzeArticle(article, { analysisStrategy: "classifier" });
 
   assert.equal(analyzed.analysisStrategy, "classifier");
   assert.equal(analyzed.keywordAlgorithm, "local-keyword");

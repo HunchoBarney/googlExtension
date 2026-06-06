@@ -4,17 +4,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
+const { createArgReader } = require("./cliArgs");
 
-function argValue(name, fallback = "") {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
-}
-
-function argNumber(name, fallback) {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
-}
+const { argValue, argNumber } = createArgReader(process.argv);
 
 function fail(message) {
   console.error(message);

@@ -128,7 +128,7 @@ async function renderFixture(page) {
     const renderer = window.PMRender;
     const status = document.getElementById("status-region");
     const results = document.getElementById("results-region");
-    renderer.renderStatus(status, "complete", "Local scan complete", "4 related markets found");
+    renderer.renderStatus(status, "complete", "Local scan complete", "4 related events found");
     renderer.renderArticleContext(results, {
       title: "Bitcoin preps 3% May downside, but US PMI data may boost BTC price",
       topic: { label: "crypto" },

@@ -6,6 +6,7 @@ const path = require("node:path");
 const signals = require("../src/lib/articleSignals");
 globalThis.PMArticleSignals = signals;
 const polymarket = require("../src/lib/polymarket");
+const { createArgReader } = require("./cliArgs");
 const {
   artifactPath,
   FEEDS,
@@ -15,23 +16,9 @@ const {
   normalizeWhitespace
 } = require("./qaUtils");
 
-function argValue(name, fallback) {
-  const prefix = `--${name}=`;
-  const found = process.argv.filter((arg) => arg.startsWith(prefix)).pop();
-  if (!found) {
-    return fallback;
-  }
-  return found.slice(prefix.length);
-}
-
-function hasFlag(name) {
-  return process.argv.includes(`--${name}`);
-}
-
-function argNumber(name, fallback) {
-  const parsed = Number(argValue(name, String(fallback)));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
+const { argNumber, hasFlag } = createArgReader(process.argv, {
+  preferLastValue: true
+});
 
 function compactEntityList(article) {
   const entities = article.entities && article.entities.top ? article.entities.top : [];
@@ -68,9 +55,9 @@ function writeFailureCandidate(record, html) {
 }
 
 async function main() {
-  const limit = argNumber("limit", 8);
-  const maxAttempts = argNumber("max-attempts", Math.max(limit * 3, FEEDS.length * 3));
-  const minConfidence = argNumber("min-confidence", 55);
+  const limit = argNumber("limit", 8, { positiveOnly: true });
+  const maxAttempts = argNumber("max-attempts", Math.max(limit * 3, FEEDS.length * 3), { positiveOnly: true });
+  const minConfidence = argNumber("min-confidence", 55, { positiveOnly: true });
   const saveFailures = hasFlag("save-failures");
   const enforceReleaseGates = !hasFlag("no-release-gates");
   const requiredCategories = FEEDS.map((feed) => feed.category);

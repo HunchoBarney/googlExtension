@@ -67,6 +67,12 @@
     renderer.renderStatus(statusRegion, phase, title, detail);
   }
 
+  function warnNonFatal(message, error) {
+    if (global.console && typeof global.console.warn === "function") {
+      global.console.warn(message, error);
+    }
+  }
+
   async function loadClassifierModel() {
     if (!classifierModelPromise) {
       classifierModelPromise = (async () => {
@@ -78,7 +84,10 @@
           throw new Error(`Could not load local classifier model: ${response.status}`);
         }
         return response.json();
-      })().catch(() => null);
+      })().catch((error) => {
+        warnNonFatal("Falling back to built-in classifier rules because the local classifier model could not be loaded.", error);
+        return null;
+      });
     }
     return classifierModelPromise;
   }
@@ -170,6 +179,7 @@
         focused: true
       });
     } catch (error) {
+      warnNonFatal("Could not open the expanded popup view.", error);
       searchInput.focus();
     }
   }
@@ -205,9 +215,9 @@
 
   function relatedDetail(count) {
     if (!count) {
-      return "No related markets found";
+      return "No related events found";
     }
-    return `${count} related market${count === 1 ? "" : "s"} found`;
+    return `${count} related event${count === 1 ? "" : "s"} found`;
   }
 
   function sortLabel() {
@@ -354,8 +364,11 @@
       fetchImpl: fetch.bind(global),
       minConfidence: MIN_CONFIDENCE,
       includeSimilar: true,
+      includeTagExpansion: true,
       searchLimitPerType: 8,
       similarLimit: 20,
+      maxTagExpansions: 3,
+      tagEventLimit: 100,
       maxResults: MAX_RELATED_RANKED_MARKETS
     });
     let resultGroups = polymarket.groupCandidatesByEvent
@@ -376,8 +389,11 @@
         minConfidence: MAYBE_MIN_CONFIDENCE,
         includeMaybe: true,
         includeSimilar: true,
+        includeTagExpansion: true,
         searchLimitPerType: 8,
         similarLimit: 20,
+        maxTagExpansions: 3,
+        tagEventLimit: 100,
         maxResults: MAX_RELATED_RANKED_MARKETS
       });
       const fillerGroups = polymarket.groupCandidatesByEvent
@@ -393,6 +409,7 @@
         resultGroups
       };
     } catch (error) {
+      warnNonFatal("Secondary related-market query failed; keeping the primary results only.", error);
       return { candidates, resultGroups };
     }
   }
@@ -425,7 +442,7 @@
       exposeDebugContext(enrichedArticle, candidates, enrichedResultGroups);
 
       if (!enrichedResultGroups.length) {
-        renderStatus("complete", "Local scan complete", "No related markets found");
+        renderStatus("complete", "Local scan complete", "No related events found");
         renderer.renderEmpty(resultsRegion, "No strong Polymarket match was found.", "The article was readable, but the related markets were weak or unavailable.", {
           title: "Related markets"
         });
@@ -568,7 +585,7 @@
       return;
     }
     if (latestRelatedArticle) {
-      renderStatus("complete", "Local scan complete", "No related markets found");
+      renderStatus("complete", "Local scan complete", "No related events found");
       renderer.renderEmpty(resultsRegion, "No strong Polymarket match was found.", "The article was readable, but the related markets were weak or unavailable.", {
         title: "Related markets"
       });

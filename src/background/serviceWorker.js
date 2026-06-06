@@ -4,6 +4,12 @@ const POPUP_WIDTH = 500;
 const POPUP_HEIGHT = 932;
 let matcherWindowId = null;
 
+function logExtensionError(message, error) {
+  if (typeof console !== "undefined" && typeof console.error === "function") {
+    console.error(message, error);
+  }
+}
+
 function popupUrl(tabId) {
   const params = new URLSearchParams({
     expanded: "1",
@@ -49,7 +55,9 @@ async function openMatcherWindow(sourceTab) {
 }
 
 chrome.action.onClicked.addListener((tab) => {
-  openMatcherWindow(tab).catch(() => {});
+  openMatcherWindow(tab).catch((error) => {
+    logExtensionError("Failed to open matcher window.", error);
+  });
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {

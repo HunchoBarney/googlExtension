@@ -6,11 +6,85 @@ const { JSDOM, VirtualConsole } = require("jsdom");
 const { Readability } = require("@mozilla/readability");
 const extractor = require("../src/lib/articleExtractor");
 
+/**
+ * @typedef {object} QAFeedDefinition
+ * @property {string} category
+ * @property {string} source
+ * @property {string} url
+ * @property {boolean} expectedStrongMatch
+ */
+
+/**
+ * @typedef {object} QAFetchTextOptions
+ * @property {number} [timeoutMs]
+ * @property {Record<string, string>} [headers]
+ */
+
+/**
+ * @typedef {object} QAFetchTextResponse
+ * @property {string} url
+ * @property {number} status
+ * @property {string} text
+ */
+
+/**
+ * @typedef {object} QAFeedArticle
+ * @property {string} category
+ * @property {string} source
+ * @property {string} feedUrl
+ * @property {string} feedTitle
+ * @property {string} url
+ * @property {boolean} expectedStrongMatch
+ */
+
+/**
+ * @typedef {object} QAFeedReportSuccess
+ * @property {string} source
+ * @property {string} category
+ * @property {string} url
+ * @property {"ok"} status
+ * @property {number} found
+ * @property {number} accepted
+ */
+
+/**
+ * @typedef {object} QAFeedReportError
+ * @property {string} source
+ * @property {string} category
+ * @property {string} url
+ * @property {"error"} status
+ * @property {string} error
+ */
+
+/**
+ * @typedef {QAFeedReportSuccess | QAFeedReportError} QAFeedReport
+ */
+
+/**
+ * @typedef {object} QAArticleDiscoveryOptions
+ * @property {QAFeedDefinition[]} [feeds]
+ * @property {number} [perFeed]
+ * @property {number} [limit]
+ * @property {number} [timeoutMs]
+ */
+
+/**
+ * @typedef {object} QAArticleDiscoveryResult
+ * @property {QAFeedArticle[]} articles
+ * @property {QAFeedReport[]} feedReports
+ */
+
+/**
+ * @typedef {{ items: QAFeedArticle[], report: QAFeedReportSuccess }} QAFeedBucket
+ */
+
+/** @type {Record<string, string>} */
 const DEFAULT_HEADERS = {
   "user-agent": "PredMarketExtension QA/0.1 (+https://local.test)",
   accept: "text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml;q=0.8,*/*;q=0.7"
 };
 
+/** @type {QAFeedDefinition[]} */
 const FEEDS = [
   {
     category: "politics/elections",
@@ -62,26 +136,47 @@ const FEEDS = [
   }
 ];
 
+/**
+ * @returns {string}
+ */
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+/**
+ * @param {string} prefix
+ * @param {string} [extension]
+ * @returns {string}
+ */
 function artifactPath(prefix, extension = "json") {
   const dir = path.join(__dirname, "..", "test-artifacts");
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, `${prefix}-${timestamp()}.${extension}`);
 }
 
+/**
+ * @template T
+ * @param {string} prefix
+ * @param {T} report
+ * @returns {string}
+ */
 function writeJsonReport(prefix, report) {
   const file = artifactPath(prefix);
   fs.writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`);
   return file;
 }
 
+/**
+ * @param {string | null | undefined} value
+ * @returns {string}
+ */
 function normalizeWhitespace(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * @returns {VirtualConsole}
+ */
 function quietVirtualConsole() {
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (error) => {
@@ -93,6 +188,11 @@ function quietVirtualConsole() {
   return virtualConsole;
 }
 
+/**
+ * @param {string} url
+ * @param {QAFetchTextOptions} [options]
+ * @returns {Promise<QAFetchTextResponse>}
+ */
 async function fetchText(url, options = {}) {
   const timeoutMs = options.timeoutMs || 15000;
   const controller = new AbortController();
@@ -121,11 +221,21 @@ async function fetchText(url, options = {}) {
   }
 }
 
+/**
+ * @param {Element} node
+ * @param {string} selector
+ * @returns {string}
+ */
 function textOf(node, selector) {
   const found = node.querySelector(selector);
   return normalizeWhitespace(found && found.textContent);
 }
 
+/**
+ * @param {string} xml
+ * @param {QAFeedDefinition} feed
+ * @returns {QAFeedArticle[]}
+ */
 function parseFeed(xml, feed) {
   const dom = new JSDOM(xml, { contentType: "text/xml" });
   const doc = dom.window.document;
@@ -157,36 +267,44 @@ function parseFeed(xml, feed) {
   });
 }
 
+/**
+ * @param {QAArticleDiscoveryOptions} [options]
+ * @returns {Promise<QAArticleDiscoveryResult>}
+ */
 async function discoverArticleLinks(options = {}) {
   const feeds = options.feeds || FEEDS;
   const perFeed = options.perFeed || 4;
   const limit = options.limit || feeds.length * perFeed;
   const seen = new Set();
+  /** @type {QAFeedArticle[]} */
   const articles = [];
+  /** @type {QAFeedReport[]} */
   const feedReports = [];
+  /** @type {QAFeedBucket[]} */
   const buckets = [];
 
   for (const feed of feeds) {
     try {
       const response = await fetchText(feed.url, { timeoutMs: options.timeoutMs || 15000 });
       const items = parseFeed(response.text, feed).slice(0, perFeed);
-      const report = {
+      const report = /** @type {QAFeedReportSuccess} */ ({
         source: feed.source,
         category: feed.category,
         url: feed.url,
         status: "ok",
         found: items.length,
         accepted: 0
-      };
+      });
       feedReports.push(report);
       buckets.push({ items, report });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       feedReports.push({
         source: feed.source,
         category: feed.category,
         url: feed.url,
         status: "error",
-        error: error && error.message ? error.message : String(error)
+        error: message
       });
     }
   }
@@ -217,6 +335,11 @@ async function discoverArticleLinks(options = {}) {
   };
 }
 
+/**
+ * @param {string} html
+ * @param {string} url
+ * @returns {ReturnType<typeof extractor.extractArticleFromDocument>}
+ */
 function extractArticleFromHtml(html, url) {
   const dom = new JSDOM(html, {
     url,
@@ -233,6 +356,5 @@ module.exports = {
   extractArticleFromHtml,
   fetchText,
   normalizeWhitespace,
-  timestamp,
   writeJsonReport
 };

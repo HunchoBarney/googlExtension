@@ -1,6 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { JSDOM } = require("jsdom");
+const {
+  makeArticleContext,
+  makeBinaryCandidate,
+  makeMovement,
+  makeOutcome
+} = require("../test-support/sharedShapes");
 
 function setupRenderer() {
   const dom = new JSDOM(`<!doctype html><body>
@@ -24,26 +30,20 @@ test("renders loading and complete status states", () => {
   assert.equal(status.querySelector(".scan-status").dataset.phase, "reading");
   assert.ok(status.querySelector(".spinner"));
 
-  renderer.renderStatus(status, "complete", "Local scan complete", "3 related markets found.");
+  renderer.renderStatus(status, "complete", "Local scan complete", "3 related events found.");
   assert.equal(status.querySelector(".scan-status").dataset.phase, "complete");
   assert.equal(status.querySelector(".spinner"), null);
   assert.match(status.textContent, /Local scan complete/);
-  assert.match(status.textContent, /3 related markets found/);
+  assert.match(status.textContent, /3 related events found/);
 });
 
 test("renders local scan context without repeating the article preview", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderArticleContext(results, {
+  renderer.renderArticleContext(results, makeArticleContext({
     title: "Bitcoin preps 3% May downside, but US PMI data may boost BTC price",
-    topic: { label: "crypto" },
-    classifier: {
-      topic: "crypto",
-      marketAngles: ["price target"]
-    },
-    entities: { top: [{ text: "Bitcoin" }, { text: "BTC" }] },
-    keywords: [{ text: "bitcoin" }]
-  });
+    entities: { top: [{ text: "Bitcoin" }, { text: "BTC" }] }
+  }));
 
   assert.equal(results.querySelector(".article-context"), null);
   assert.doesNotMatch(results.textContent, /Bitcoin preps 3% May downside/);
@@ -53,26 +53,15 @@ test("renders parent event cards with API image, option percentages, movement, a
   const { renderer, results } = setupRenderer();
   const image = "https://polymarket.example/bitcoin.png";
 
-  renderer.renderResults(results, [{
-    title: "Will Bitcoin hit $150k in 2026?",
-    url: "https://polymarket.com/event/bitcoin-targets",
+  renderer.renderResults(results, [makeBinaryCandidate({
     image,
-    primaryOutcome: "Yes",
-    secondaryOutcome: "No",
-    primaryPrice: 0.44,
-    secondaryPrice: 0.56,
-    primaryPercent: 44,
-    outcomeOptions: [
-      { label: "Yes", price: 0.44, percent: 44 },
-      { label: "No", price: 0.56, percent: 56 }
-    ],
-    movement: { direction: "up", value: 0.02 },
+    movement: makeMovement("up", 0.02),
     volume: 1250000,
     traderCount: 12600,
     confidence: 73,
     category: "Politics",
     tags: ["Iran"]
-  }]);
+  })]);
 
   const card = results.querySelector(".market-card");
   assert.equal(card.getAttribute("href"), "https://polymarket.com/event/bitcoin-targets");
@@ -95,16 +84,10 @@ test("renders parent event cards with API image, option percentages, movement, a
 test("falls back to local icon when an API market image is unavailable", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [{
-    title: "Will Bitcoin hit $150k in 2026?",
-    url: "https://polymarket.com/event/bitcoin-targets",
+  renderer.renderResults(results, [makeBinaryCandidate({
     image: "https://polymarket.example/missing.png",
-    primaryOutcome: "Yes",
-    secondaryOutcome: "No",
-    primaryPrice: 0.44,
-    secondaryPrice: 0.56,
     confidence: 73
-  }]);
+  })]);
 
   const image = results.querySelector(".market-image");
   assert.ok(image);
@@ -115,14 +98,12 @@ test("falls back to local icon when an API market image is unavailable", () => {
 
 test("only shows no-strong-match note for a full related result set", () => {
   const { renderer, results } = setupRenderer();
-  const base = {
+  const base = makeBinaryCandidate({
     url: "https://polymarket.com/event/example",
-    primaryOutcome: "Yes",
-    secondaryOutcome: "No",
     primaryPrice: 0.55,
     secondaryPrice: 0.45,
     confidence: 80
-  };
+  });
 
   renderer.renderResults(results, [{
     ...base,
@@ -143,42 +124,34 @@ test("renders one clickable parent event card and hides child markets", () => {
 
   renderer.renderResults(results, [
     {
-      id: "fed-cut",
+      ...makeBinaryCandidate({
+        id: "fed-cut",
+        title: "Will the Fed cut interest rates in September?",
+        url: "https://polymarket.com/event/fed-rate-decisions",
+        primaryPrice: 0.58,
+        secondaryPrice: 0.42,
+        primaryPercent: 58,
+        movement: makeMovement("flat", 0),
+        volume: 500000,
+        confidence: 72
+      }),
       eventId: "fed-event",
-      eventTitle: "Fed rate decisions",
-      title: "Will the Fed cut interest rates in September?",
-      url: "https://polymarket.com/event/fed-rate-decisions",
-      primaryOutcome: "Yes",
-      secondaryOutcome: "No",
-      primaryPrice: 0.58,
-      secondaryPrice: 0.42,
-      primaryPercent: 58,
-      outcomeOptions: [
-        { label: "Yes", price: 0.58, percent: 58 },
-        { label: "No", price: 0.42, percent: 42 }
-      ],
-      movement: { direction: "flat", value: 0 },
-      volume: 500000,
-      confidence: 72
+      eventTitle: "Fed rate decisions"
     },
     {
-      id: "fed-hold",
+      ...makeBinaryCandidate({
+        id: "fed-hold",
+        title: "Will the Fed hold rates after the next CPI report?",
+        url: "https://polymarket.com/event/fed-rate-decisions",
+        primaryPrice: 0.36,
+        secondaryPrice: 0.64,
+        primaryPercent: 36,
+        movement: makeMovement("flat", 0),
+        volume: 400000,
+        confidence: 68
+      }),
       eventId: "fed-event",
-      eventTitle: "Fed rate decisions",
-      title: "Will the Fed hold rates after the next CPI report?",
-      url: "https://polymarket.com/event/fed-rate-decisions",
-      primaryOutcome: "Yes",
-      secondaryOutcome: "No",
-      primaryPrice: 0.36,
-      secondaryPrice: 0.64,
-      primaryPercent: 36,
-      outcomeOptions: [
-        { label: "Yes", price: 0.36, percent: 36 },
-        { label: "No", price: 0.64, percent: 64 }
-      ],
-      movement: { direction: "flat", value: 0 },
-      volume: 400000,
-      confidence: 68
+      eventTitle: "Fed rate decisions"
     }
   ]);
 
@@ -195,7 +168,7 @@ test("renders one clickable parent event card and hides child markets", () => {
 test("renders option-agnostic labels for team and multi-option markets", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [{
+  renderer.renderResults(results, [makeBinaryCandidate({
     title: "NBA Finals winner",
     url: "https://polymarket.com/event/nba-finals-winner",
     primaryOutcome: "Lakers",
@@ -204,13 +177,13 @@ test("renders option-agnostic labels for team and multi-option markets", () => {
     secondaryPrice: 0.35,
     primaryPercent: 41,
     outcomeOptions: [
-      { label: "Lakers", price: 0.41, percent: 41 },
-      { label: "Celtics", price: 0.35, percent: 35 },
-      { label: "Knicks", price: 0.12, percent: 12 }
+      makeOutcome("Lakers", 0.41, 41),
+      makeOutcome("Celtics", 0.35, 35),
+      makeOutcome("Knicks", 0.12, 12)
     ],
-    movement: { direction: "flat", value: 0 },
+    movement: makeMovement("flat", 0),
     confidence: 66
-  }]);
+  })]);
 
   const text = results.querySelector(".market-card").textContent;
   assert.match(text, /Lakers/);
@@ -226,17 +199,15 @@ test("renders option-agnostic labels for team and multi-option markets", () => {
 test("renders unavailable option prices as n/a instead of zero", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [{
+  renderer.renderResults(results, [makeBinaryCandidate({
     title: "Will Bitcoin reach an extremely long price target before the end of 2026?",
     url: "https://polymarket.com/event/bitcoin-target",
-    primaryOutcome: "Yes",
-    secondaryOutcome: "No",
     primaryPrice: null,
     secondaryPrice: null,
     primaryPercent: null,
-    movement: { direction: "unknown", value: null },
+    movement: makeMovement("unknown", null),
     confidence: 59
-  }]);
+  })]);
 
   const text = results.textContent;
   assert.match(text, /Yesn\/a/);
@@ -248,25 +219,19 @@ test("renders unavailable option prices as n/a instead of zero", () => {
 test("does not expose maybe score badges on related cards", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [{
+  renderer.renderResults(results, [makeBinaryCandidate({
     title: "Next Google Gemini Pro Model: Arena Debut?",
     url: "https://polymarket.com/event/google-gemini-pro-model",
-    primaryOutcome: "Yes",
-    secondaryOutcome: "No",
     primaryPrice: 0.31,
     secondaryPrice: 0.69,
     primaryPercent: 31,
-    outcomeOptions: [
-      { label: "Yes", price: 0.31, percent: 31 },
-      { label: "No", price: 0.69, percent: 69 }
-    ],
-    movement: { direction: "flat", value: 0 },
+    movement: makeMovement("flat", 0),
     confidence: 46,
     parentConfidence: 52,
     matchTier: "maybe",
     category: "Tech",
     tags: ["AI"]
-  }]);
+  })]);
 
   const card = results.querySelector(".market-card");
   assert.equal(card.querySelector(".market-score"), null);
@@ -282,12 +247,12 @@ test("does not expose maybe score badges on related cards", () => {
 test("renders no-match and API error states in the market-first surface", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderArticleContext(results, {
+  renderer.renderArticleContext(results, makeArticleContext({
     title: "Fed officials wait for CPI",
     topic: { label: "economy/markets" },
     entities: { top: [{ text: "Federal Reserve" }] },
     keywords: [{ text: "rate cuts" }]
-  });
+  }));
   renderer.renderEmpty(results, "No strong Polymarket match was found.", "Related markets were weak.");
 
   assert.equal(results.querySelector(".article-context"), null);

@@ -708,6 +708,67 @@ test("fetchCandidates uses tuned public-search requests for text retrieval", asy
   assert.ok(calls.every((url) => !url.includes("/markets?")));
 });
 
+test("fetchCandidates expands central entity tags into event inventory", async () => {
+  const calls = [];
+  const analyzed = signals.analyzeArticle({
+    title: "Ceasefire faces strain as US and Iran launch new strikes",
+    cleanText: "Iran, Israel, and the US faced renewed conflict as ceasefire talks and war risks dominated the live updates."
+  });
+
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.includes("/events?tag_id=78")) {
+      return {
+        ok: true,
+        json: async () => [{
+          id: "iran-tag-event",
+          slug: "iran-agrees-to-end-enrichment",
+          title: "Iran agrees to end enrichment of uranium by June 30?",
+          active: true,
+          closed: false,
+          markets: [{
+            id: "iran-tag-market",
+            question: "Iran agrees to end enrichment of uranium by June 30?",
+            outcomes: "[\"Yes\", \"No\"]",
+            outcomePrices: "[\"0.34\", \"0.66\"]",
+            volume: "1000000",
+            active: true,
+            closed: false
+          }]
+        }]
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        events: [],
+        tags: [
+          { id: "78", label: "Iran", slug: "iran" },
+          { id: "500", label: "Sports", slug: "sports" }
+        ]
+      })
+    };
+  };
+
+  const candidates = await polymarket.fetchCandidates({
+    ...analyzed,
+    queries: ["Iran"]
+  }, {
+    fetchImpl,
+    includeTagExpansion: true,
+    searchLimitPerType: 8,
+    tagEventLimit: 100
+  });
+
+  assert.ok(calls.some((url) => url.includes("search_tags=true")));
+  assert.ok(calls.some((url) => url.includes("/events?tag_id=78")));
+  assert.ok(calls.some((url) => url.includes("active=true")));
+  assert.ok(calls.some((url) => url.includes("closed=false")));
+  assert.ok(calls.some((url) => url.includes("limit=100")));
+  assert.ok(calls.every((url) => !url.includes("tag_id=500")));
+  assert.ok(candidates.some((candidate) => candidate.id === "iran-tag-market"));
+});
+
 test("fetchCandidates can request similar events from the article title", async () => {
   const calls = [];
   const analyzed = signals.analyzeArticle({

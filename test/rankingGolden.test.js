@@ -36,14 +36,14 @@ test("ranking golden fixture keeps representative topic ordering stable", () => 
   }
 });
 
-test("local model ranking remains stable when legacy keyword strategy input is ignored", () => {
+test("local model ranking remains stable when classifier strategy is requested explicitly", () => {
   const candidates = fixture.markets.map((market) => polymarket.normalizeMarket(market));
 
   for (const item of fixture.articles) {
     const analyzed = signals.analyzeArticle({
       title: item.title,
       cleanText: item.cleanText
-    }, { keywordAlgorithm: "legacy-keyword-mode" });
+    }, { analysisStrategy: "classifier" });
     const ranked = polymarket.rankCandidates(candidates, analyzed, {
       minConfidence: 48,
       maxResults: 3

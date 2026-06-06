@@ -9,6 +9,15 @@
 })(typeof window !== "undefined" ? window : globalThis, function createArticleSignals() {
   "use strict";
 
+  /** @typedef {import("./sharedTypes").PMArticleInput} PMArticleInput */
+  /** @typedef {import("./sharedTypes").PMAnalyzedArticle} PMAnalyzedArticle */
+  /** @typedef {import("./sharedTypes").PMClassifierModel} PMClassifierModel */
+  /** @typedef {import("./sharedTypes").PMClassifierResult} PMClassifierResult */
+  /** @typedef {import("./sharedTypes").PMEntity} PMEntity */
+  /** @typedef {import("./sharedTypes").PMEntityGroups} PMEntityGroups */
+  /** @typedef {import("./sharedTypes").PMKeyword} PMKeyword */
+  /** @typedef {import("./sharedTypes").PMTopicSummary} PMTopicSummary */
+
   const STOPWORDS = new Set([
     "a", "about", "above", "after", "again", "against", "all", "also", "am", "an", "and", "any", "are", "as", "at",
     "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "could", "did", "do",
@@ -104,6 +113,9 @@
       FILE_CLASSIFIER_MODEL = require("./articleAngleClassifierData.json");
     }
   } catch (error) {
+    if (typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("Falling back to built-in classifier rules because articleAngleClassifierData.json could not be loaded.", error);
+    }
     FILE_CLASSIFIER_MODEL = null;
   }
 
@@ -405,6 +417,10 @@
     return extractKeywords(text, title);
   }
 
+  /**
+   * @param {PMArticleInput} article
+   * @returns {{ localModel: PMKeyword[] }}
+   */
   function compareKeywordAlgorithms(article) {
     const cleanText = normalizeWhitespace(article.cleanText || article.text || "");
     const title = normalizeWhitespace(article.title || "");
@@ -674,6 +690,15 @@
       .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label));
   }
 
+  /**
+   * @param {string} text
+   * @param {string} title
+   * @param {PMEntityGroups} entities
+   * @param {PMKeyword[]} keywords
+   * @param {PMTopicSummary} topic
+   * @param {{ classifierModel?: PMClassifierModel, assistive?: boolean }} [options]
+   * @returns {PMClassifierResult}
+   */
   function classifyArticleAngle(text, title, entities, keywords, topic, options = {}) {
     const model = classifierModelFromOptions(options);
     const haystack = canonicalKey(`${title} ${text.slice(0, 16000)} ${(keywords || []).map((keyword) => keyword.text).join(" ")} ${(entities.top || []).map((entity) => entity.text).join(" ")}`);
@@ -790,6 +815,13 @@
     return !textHasEntity(stripped, entity) && !/\bstablecoin\b/i.test(stripped);
   }
 
+  /**
+   * @param {PMArticleInput|PMAnalyzedArticle} article
+   * @param {PMEntityGroups} entities
+   * @param {PMTopicSummary} topic
+   * @param {PMKeyword[]} keywords
+   * @returns {PMEntity[]}
+   */
   function deriveCentralEntities(article, entities, topic, keywords) {
     const cleanText = article.cleanText || article.text || "";
     const title = article.title || "";
@@ -871,6 +903,10 @@
     return match ? normalizeWhitespace(match[1]) : "";
   }
 
+  /**
+   * @param {PMAnalyzedArticle} article
+   * @returns {string[]}
+   */
   function generateQueries(article) {
     const queries = [];
     const title = article.title || "";
@@ -886,7 +922,7 @@
     const topKeywords = keywords.slice(0, 8);
     const hasCryptoEntities = Boolean(cryptoEntities.length || (entities.crypto && entities.crypto.length));
     const topicLabel = article.topic && article.topic.label;
-    const classifier = article.classifier || article.localClassifier || null;
+    const classifier = article.classifier || null;
     const classifierStrong = classifier && classifier.confidence >= 0.45 && classifier.topic && classifier.topic !== "general";
     const classifierTopic = classifier && classifier.topic;
     const titleHasCryptoAngle = /\b(bitcoin|btc|ethereum|eth|crypto|token|blockchain|defi|stablecoin)\b/i.test(titleKey);
@@ -1008,10 +1044,15 @@
     return queries.slice(0, 9);
   }
 
+  /**
+   * @param {PMArticleInput} article
+   * @param {{ analysisStrategy?: string, classifierModel?: PMClassifierModel }} [options]
+   * @returns {PMAnalyzedArticle}
+   */
   function analyzeArticle(article, options = {}) {
     const cleanText = normalizeWhitespace(article.cleanText || article.text || "");
     const title = normalizeWhitespace(article.title || "");
-    const analysisStrategy = normalizeAnalysisStrategy(options.analysisStrategy || options.keywordAlgorithm);
+    const analysisStrategy = normalizeAnalysisStrategy(options.analysisStrategy);
     const keywordAlgorithm = normalizeKeywordAlgorithm(analysisStrategy);
     const keywords = extractKeywordsByAlgorithm(cleanText, title, keywordAlgorithm);
     const entities = extractEntities(cleanText, title);
@@ -1030,8 +1071,7 @@
       namedEntities: entities,
       entities,
       topic,
-      classifier,
-      localClassifier: classifier
+      classifier
     };
     enriched.centralEntities = deriveCentralEntities(enriched, entities, topic, keywords);
     enriched.queries = generateQueries(enriched);
@@ -1053,6 +1093,8 @@
     deriveCentralEntities,
     generateQueries,
     tokenize,
+    tokenSequenceIncludes,
+    entitySearchKeys,
     canonicalKey,
     normalizeWhitespace
   };

@@ -1,6 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { JSDOM } = require("jsdom");
+const {
+  makeArticleContext,
+  makeBinaryCandidate
+} = require("../test-support/sharedShapes");
 
 function waitFor(condition, label) {
   return new Promise((resolve, reject) => {
@@ -81,19 +85,11 @@ function setupPopup({ extractResult, searchResult, searchError } = {}) {
   const signals = {
     analyzeArticle(article, options) {
       calls.analyzeOptions.push(options);
-      return {
+      return makeArticleContext({
         ...article,
         analysisStrategy: options.analysisStrategy,
-        topic: { label: "crypto" },
-        classifier: {
-          topic: "crypto",
-          marketAngles: ["price target"],
-          confidence: 0.8
-        },
-        entities: { top: [{ text: "Bitcoin" }] },
-        keywords: [{ text: "bitcoin" }],
         queries: ["Bitcoin"]
-      };
+      });
     }
   };
 
@@ -168,12 +164,12 @@ function setupPopup({ extractResult, searchResult, searchError } = {}) {
 }
 
 test("popup controller runs extraction, signal analysis, search, and result rendering in order", async () => {
-  const candidate = {
+  const candidate = makeBinaryCandidate({
     id: "btc",
     title: "Will Bitcoin hit $150k?",
     confidence: 70,
     url: "https://polymarket.com/event/bitcoin"
-  };
+  });
   const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate] });
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "successful popup run");
@@ -206,12 +202,12 @@ test("popup controller runs extraction, signal analysis, search, and result rend
 });
 
 test("popup refresh reruns local model analysis", async () => {
-  const candidate = {
+  const candidate = makeBinaryCandidate({
     id: "btc",
     title: "Will Bitcoin hit $150k?",
     confidence: 70,
     url: "https://polymarket.com/event/bitcoin"
-  };
+  });
   const { calls, refreshButton } = setupPopup({ searchResult: [candidate] });
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
@@ -222,20 +218,20 @@ test("popup refresh reruns local model analysis", async () => {
 });
 
 test("popup fills sparse related results with maybe-related groups", async () => {
-  const strongCandidate = {
+  const strongCandidate = makeBinaryCandidate({
     id: "btc-strong",
     title: "Will Bitcoin hit $150k?",
     confidence: 70,
     matchTier: "strong",
     url: "https://polymarket.com/event/bitcoin-150k"
-  };
-  const maybeCandidate = {
+  });
+  const maybeCandidate = makeBinaryCandidate({
     id: "btc-maybe",
     title: "Bitcoin above $120k?",
     confidence: 46,
     matchTier: "maybe",
     url: "https://polymarket.com/event/bitcoin-120k"
-  };
+  });
   const { calls, refreshButton } = setupPopup({
     searchResult(options) {
       return options.minConfidence === 55
@@ -251,11 +247,11 @@ test("popup fills sparse related results with maybe-related groups", async () =>
   assert.equal(calls.articleSearches[1].options.includeMaybe, true);
   assert.deepEqual(calls.results[0].candidates, [strongCandidate, maybeCandidate]);
   assert.equal(calls.results[0].candidates[1].matchTier, "maybe");
-  assert.equal(calls.statuses.at(-1).detail, "2 related markets found");
+  assert.equal(calls.statuses.at(-1).detail, "2 related events found");
 });
 
 test("popup progressively reveals all related groups instead of capping at four", async () => {
-  const relatedCandidates = Array.from({ length: 12 }, (_item, index) => ({
+  const relatedCandidates = Array.from({ length: 12 }, (_item, index) => makeBinaryCandidate({
     id: `related-${index}`,
     title: `Related market ${index + 1}`,
     confidence: 90 - index,
@@ -270,7 +266,7 @@ test("popup progressively reveals all related groups instead of capping at four"
     calls.results[0].candidates.length === 8
   ), "initial related batch");
 
-  assert.equal(calls.statuses.at(-1).detail, "12 related markets found");
+  assert.equal(calls.statuses.at(-1).detail, "12 related events found");
   assert.equal(calls.groupCandidates[0].options.maxGroups, 160);
   assert.deepEqual(calls.results[0].candidates.map((candidate) => candidate.id), relatedCandidates.slice(0, 8).map((candidate) => candidate.id));
 
@@ -318,12 +314,12 @@ test("popup controller renders API error state on Polymarket failure", async () 
 });
 
 test("popup search form searches Polymarket markets without rerunning article extraction", async () => {
-  const searchCandidate = {
+  const searchCandidate = makeBinaryCandidate({
     id: "manual-btc",
     title: "Bitcoin price on May 31?",
     confidence: 82,
     url: "https://polymarket.com/event/bitcoin-price-on-may-31"
-  };
+  });
   const { dom, calls, refreshButton } = setupPopup({ searchResult: [searchCandidate] });
   const input = dom.window.document.getElementById("market-search-input");
   const form = dom.window.document.getElementById("market-search-form");
@@ -344,12 +340,12 @@ test("popup search form searches Polymarket markets without rerunning article ex
 });
 
 test("popup trending tab loads live trending markets without rerunning article extraction", async () => {
-  const trendingCandidate = {
+  const trendingCandidate = makeBinaryCandidate({
     id: "trend-btc",
     title: "What price will Bitcoin hit this week?",
     confidence: 88,
     url: "https://polymarket.com/event/bitcoin-weekly"
-  };
+  });
   const { dom, calls, refreshButton } = setupPopup({ searchResult: [trendingCandidate] });
   const trendingTab = dom.window.document.getElementById("trending-tab");
 

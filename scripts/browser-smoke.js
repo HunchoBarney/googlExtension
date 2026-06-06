@@ -6,27 +6,14 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { chromium } = require("playwright-core");
+const { createArgReader } = require("./cliArgs");
 const {
   artifactPath,
   discoverArticleLinks
 } = require("./qaUtils");
 
 const ACTION_COMMAND_NAME = "_execute_action";
-
-function argValue(name, fallback) {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
-}
-
-function argNumber(name, fallback) {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function hasFlag(name) {
-  return process.argv.includes(`--${name}`);
-}
+const { argValue, argNumber, hasFlag } = createArgReader(process.argv);
 
 function chromeExecutable() {
   let bundledChromium = "";
@@ -608,8 +595,8 @@ function validateExpandedState(expandedState, report, label = "Larger view") {
     expandedState.visual.brandDividerWidth < 1 ||
     expandedState.visual.tabCount !== 3 ||
     expandedState.visual.searchHeight < 40 ||
+    expandedState.visual.scoreBadgeCount !== 0 ||
     (expandedState.cardLinks.length > 0 && (
-      expandedState.visual.scoreBadgeCount !== expandedState.cardLinks.length ||
       expandedState.visual.openLinkCount !== expandedState.cardLinks.length
     ))
   ) {
@@ -970,14 +957,14 @@ async function runActionPopupSmoke({
       throw new Error("Extension popup repeated article preview content.");
     }
     if (
-      report.visual.brandDividerWidth < 1 ||
-      report.visual.tabCount !== 3 ||
-      report.visual.searchHeight < 30 ||
-      (report.cardLinks.length > 0 && (
-        report.visual.scoreBadgeCount !== report.cardLinks.length ||
-        report.visual.openLinkCount !== report.cardLinks.length
-      ))
-    ) {
+    report.visual.brandDividerWidth < 1 ||
+    report.visual.tabCount !== 3 ||
+    report.visual.searchHeight < 30 ||
+    report.visual.scoreBadgeCount !== 0 ||
+    (report.cardLinks.length > 0 && (
+      report.visual.openLinkCount !== report.cardLinks.length
+    ))
+  ) {
       throw new Error(`Extension popup missing target visual structure: ${JSON.stringify(report.visual)}`);
     }
     const displayGroupsWithImages = (report.displayGroups || []).filter((group) => group && group.image).length;

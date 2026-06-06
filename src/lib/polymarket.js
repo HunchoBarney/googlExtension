@@ -9,6 +9,16 @@
 })(typeof window !== "undefined" ? window : globalThis, function createPolymarket(signals) {
   "use strict";
 
+  /** @typedef {import("./sharedTypes").PMAnalyzedArticle} PMAnalyzedArticle */
+  /** @typedef {import("./sharedTypes").PMJsonObject} PMJsonObject */
+  /** @typedef {import("./sharedTypes").PMJsonValue} PMJsonValue */
+  /** @typedef {import("./sharedTypes").PMMarketCandidate} PMMarketCandidate */
+  /** @typedef {import("./sharedTypes").PMMarketGroup} PMMarketGroup */
+  /** @typedef {import("./sharedTypes").PMMovement} PMMovement */
+  /** @typedef {{ ok: boolean, status: number, json(): Promise<PMJsonValue> }} PMFetchResponse */
+  /** @typedef {(url: string, init?: { headers?: Record<string, string>, redirect?: string, signal?: AbortSignal }) => Promise<PMFetchResponse>} PMFetchLike */
+  /** @typedef {{ query?: string }} PMSourceMeta */
+
   const GAMMA_API = "https://gamma-api.polymarket.com";
   const DATA_API = "https://data-api.polymarket.com";
   const POLYMARKET = "https://polymarket.com";
@@ -23,40 +33,47 @@
   ]);
   const NON_LIVE_STATUS_PATTERN = /\b(review|reviewing|pending|approval|draft|staged|paused|halted|suspended|closed|resolved|archived|cancelled|canceled)\b/i;
   const LIVE_STATUS_PATTERN = /\b(approved|accepted|live|published|active|open|trading)\b/i;
-
-  function normalizeWhitespace(value) {
-    return String(value || "").replace(/\s+/g, " ").trim();
-  }
-
-  function canonicalKey(value) {
-    if (signals && signals.canonicalKey) {
-      return signals.canonicalKey(value);
-    }
-    return normalizeWhitespace(value).toLowerCase().replace(/[^\w$.\s-]/g, "").replace(/\s+/g, " ");
-  }
+  const normalizeWhitespace = signals && signals.normalizeWhitespace
+    ? signals.normalizeWhitespace
+    : function normalizeWhitespace(value) {
+      return String(value || "").replace(/\s+/g, " ").trim();
+    };
+  const canonicalKey = signals && signals.canonicalKey
+    ? signals.canonicalKey
+    : function canonicalKey(value) {
+      return normalizeWhitespace(value).toLowerCase().replace(/[^\w$.\s-]/g, "").replace(/\s+/g, " ");
+    };
+  const tokenSequenceIncludes = signals && signals.tokenSequenceIncludes
+    ? signals.tokenSequenceIncludes
+    : function tokenSequenceIncludes(haystackTokens, needleTokens) {
+      if (!haystackTokens.length || !needleTokens.length || needleTokens.length > haystackTokens.length) {
+        return false;
+      }
+      for (let index = 0; index <= haystackTokens.length - needleTokens.length; index += 1) {
+        let matched = true;
+        for (let offset = 0; offset < needleTokens.length; offset += 1) {
+          if (haystackTokens[index + offset] !== needleTokens[offset]) {
+            matched = false;
+            break;
+          }
+        }
+        if (matched) {
+          return true;
+        }
+      }
+      return false;
+    };
+  const entitySearchKeys = signals && signals.entitySearchKeys
+    ? signals.entitySearchKeys
+    : function entitySearchKeys(entity) {
+      return Array.from(new Set([entity && entity.text, ...((entity && entity.aliases) || [])]
+        .map(canonicalKey)
+        .filter((key) => key && key.length >= 2)));
+    };
 
   function tokenize(value) {
     const matches = canonicalKey(value).match(/[a-z0-9][a-z0-9'$-]*/g);
     return matches ? matches.filter((token) => !STOPWORDS.has(token) && token.length > 1) : [];
-  }
-
-  function tokenSequenceIncludes(haystackTokens, needleTokens) {
-    if (!haystackTokens.length || !needleTokens.length || needleTokens.length > haystackTokens.length) {
-      return false;
-    }
-    for (let index = 0; index <= haystackTokens.length - needleTokens.length; index += 1) {
-      let matched = true;
-      for (let offset = 0; offset < needleTokens.length; offset += 1) {
-        if (haystackTokens[index + offset] !== needleTokens[offset]) {
-          matched = false;
-          break;
-        }
-      }
-      if (matched) {
-        return true;
-      }
-    }
-    return false;
   }
 
   function textHasTerm(text, term) {
@@ -65,12 +82,6 @@
       return false;
     }
     return tokenSequenceIncludes(tokenize(text), needleTokens);
-  }
-
-  function entitySearchKeys(entity) {
-    return Array.from(new Set([entity && entity.text, ...((entity && entity.aliases) || [])]
-      .map(canonicalKey)
-      .filter((key) => key && key.length >= 2)));
   }
 
   function toNumber(value) {
@@ -191,6 +202,10 @@
     };
   }
 
+  /**
+   * @param {PMJsonObject} raw
+   * @returns {PMMovement}
+   */
   function parseMovement(raw) {
     const change = firstNumber(
       raw.oneDayPriceChange,
@@ -405,6 +420,12 @@
     );
   }
 
+  /**
+   * @param {PMJsonObject} raw
+   * @param {PMJsonObject} [event]
+   * @param {PMSourceMeta} [meta]
+   * @returns {PMMarketCandidate}
+   */
   function normalizeMarket(raw, event = {}, meta = {}) {
     const outcomes = parseOutcomes(raw);
     const title = normalizeWhitespace(raw.question || raw.title || event.title || event.question || "");
@@ -452,6 +473,11 @@
     };
   }
 
+  /**
+   * @param {PMJsonObject} event
+   * @param {PMSourceMeta} [meta]
+   * @returns {PMMarketCandidate[]}
+   */
   function normalizeEvent(event, meta = {}) {
     if (Array.isArray(event.markets) && event.markets.length) {
       return event.markets.map((market) => normalizeMarket(market, event, meta));
@@ -477,6 +503,11 @@
     }, event, meta)];
   }
 
+  /**
+   * @param {PMJsonObject|PMJsonObject[]|null} payload
+   * @param {PMSourceMeta} [meta]
+   * @returns {PMMarketCandidate[]}
+   */
   function flattenPayload(payload, meta = {}) {
     const candidates = [];
     if (!payload) {
@@ -515,6 +546,10 @@
     return candidate.id || candidate.slug || canonicalKey(candidate.title);
   }
 
+  /**
+   * @param {PMMarketCandidate[]} candidates
+   * @returns {PMMarketCandidate[]}
+   */
   function dedupeCandidates(candidates) {
     const map = new Map();
     for (const candidate of candidates) {
@@ -759,7 +794,7 @@
   }
 
   function classifierScore(candidate, article) {
-    const classifier = article.classifier || article.localClassifier;
+    const classifier = article.classifier;
     if (!classifier || classifier.mode !== "assistive" || classifier.confidence < 0.45 || classifier.topic === "general") {
       return {
         boost: 0,
@@ -904,7 +939,7 @@
   }
 
   function articleMarketAngles(article) {
-    const classifier = article.classifier || article.localClassifier;
+    const classifier = article.classifier;
     if (!classifier || classifier.confidence < 0.45 || classifier.topic === "general") {
       return [];
     }
@@ -912,7 +947,7 @@
   }
 
   function relevanceGate(candidate, article) {
-    const classifier = article.classifier || article.localClassifier;
+    const classifier = article.classifier;
     const articleTopic = article.topic && article.topic.label;
     const angles = articleMarketAngles(article);
     const candidateAngles = candidateAngleProfile(candidate);
@@ -1070,6 +1105,11 @@
       .slice(0, 3);
   }
 
+  /**
+   * @param {PMMarketCandidate} candidate
+   * @param {PMAnalyzedArticle} article
+   * @returns {PMMarketCandidate}
+   */
   function rankCandidate(candidate, article) {
     const entities = entityScore(candidate, article);
     const keywords = keywordScore(candidate, article);
@@ -1137,6 +1177,12 @@
     };
   }
 
+  /**
+   * @param {PMMarketCandidate[]} candidates
+   * @param {PMAnalyzedArticle} article
+   * @param {{ minConfidence?: number, maxResults?: number, includeMaybe?: boolean }} [options]
+   * @returns {PMMarketCandidate[]}
+   */
   function rankCandidates(candidates, article, options = {}) {
     const minConfidence = options.minConfidence === undefined ? DEFAULT_MIN_CONFIDENCE : options.minConfidence;
     const maxResults = options.maxResults || DEFAULT_MAX_RESULTS;
@@ -1292,6 +1338,11 @@
     }
   }
 
+  /**
+   * @param {PMMarketCandidate[]} candidates
+   * @param {{ maxGroups?: number, maxChildMarkets?: number, article?: PMAnalyzedArticle|null, minParentConfidence?: number }} [options]
+   * @returns {PMMarketGroup[]}
+   */
   function groupCandidatesByEvent(candidates, options = {}) {
     const maxGroups = options.maxGroups || DEFAULT_MAX_RESULTS;
     const maxChildMarkets = options.maxChildMarkets || DEFAULT_MAX_CHILD_MARKETS;
@@ -1367,7 +1418,7 @@
     params.set("limit_per_type", String(Math.max(3, Math.min(20, Number(options.limitPerType) || 8))));
     params.set("keep_closed_markets", "0");
     params.set("search_profiles", "false");
-    params.set("search_tags", "false");
+    params.set("search_tags", options.searchTags === true ? "true" : "false");
     return {
       url: `${GAMMA_API}/public-search?${params.toString()}`,
       source: "public-search"
@@ -1396,6 +1447,109 @@
       url: `${GAMMA_API}/events/similar?${params.toString()}`,
       query: title,
       source: "events-similar"
+    };
+  }
+
+  function payloadTags(payload) {
+    if (!payload || !Array.isArray(payload.tags)) {
+      return [];
+    }
+    return payload.tags
+      .map((tag) => ({
+        id: tag && tag.id ? String(tag.id) : "",
+        label: normalizeWhitespace(tag && (tag.label || tag.name || tag.slug)),
+        slug: normalizeWhitespace(tag && tag.slug)
+      }))
+      .filter((tag) => tag.id && (tag.label || tag.slug));
+  }
+
+  function tagText(tag) {
+    return canonicalKey(`${tag.label || ""} ${String(tag.slug || "").replace(/-/g, " ")}`);
+  }
+
+  function articleTagEntityKeys(article) {
+    const generic = new Set(["us", "u s", "u.s.", "un", "eu", "uk"]);
+    const highSignalTypes = new Set(["place", "crypto", "company", "institution", "person", "organization"]);
+    const entities = [
+      ...((article && article.centralEntities) || []),
+      ...((article && article.entities && article.entities.top) || [])
+    ];
+    const keys = [];
+    for (const entity of entities) {
+      if (!entity || !highSignalTypes.has(entity.type)) {
+        continue;
+      }
+      for (const key of entitySearchKeys(entity)) {
+        if (key.length > 2 && !generic.has(key)) {
+          keys.push(key);
+        }
+      }
+    }
+    return Array.from(new Set(keys)).slice(0, 8);
+  }
+
+  function tagExpansionScore(tag, article) {
+    const entityKeys = articleTagEntityKeys(article);
+    if (!entityKeys.length) {
+      return 0;
+    }
+    const labelKey = canonicalKey(tag.label);
+    const slugKey = canonicalKey(String(tag.slug || "").replace(/-/g, " "));
+    const combined = tagText(tag);
+    let score = 0;
+
+    for (const entityKey of entityKeys) {
+      if (labelKey === entityKey || slugKey === entityKey) {
+        score = Math.max(score, 100);
+      } else if (textHasTerm(combined, entityKey)) {
+        score = Math.max(score, 60);
+      }
+    }
+    if (!score) {
+      return 0;
+    }
+
+    const classifier = article && article.classifier;
+    const angleHints = [
+      ...((classifier && classifier.marketAngles) || []),
+      ...((classifier && classifier.queryHints) || [])
+    ];
+    for (const hint of angleHints.slice(0, 8)) {
+      if (hint && textHasTerm(combined, hint)) {
+        score += 8;
+      }
+    }
+    return score;
+  }
+
+  function selectTagExpansions(tags, article, options = {}) {
+    const seen = new Set();
+    const scored = [];
+    for (const tag of tags) {
+      if (!tag || !tag.id || seen.has(tag.id)) {
+        continue;
+      }
+      seen.add(tag.id);
+      const score = tagExpansionScore(tag, article);
+      if (score > 0) {
+        scored.push({ ...tag, score });
+      }
+    }
+    return scored
+      .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label))
+      .slice(0, Math.max(1, Math.min(5, Number(options.maxTagExpansions) || 2)));
+  }
+
+  function tagEventRequest(tag, options = {}) {
+    const params = new URLSearchParams();
+    params.set("tag_id", tag.id);
+    params.set("active", "true");
+    params.set("closed", "false");
+    params.set("limit", String(Math.max(20, Math.min(200, Number(options.tagEventLimit) || 100))));
+    return {
+      url: `${GAMMA_API}/events?${params.toString()}`,
+      query: tag.label || tag.slug,
+      source: "events-tag"
     };
   }
 
@@ -1529,6 +1683,11 @@
     return enriched;
   }
 
+  /**
+   * @param {PMAnalyzedArticle} article
+   * @param {{ fetchImpl?: PMFetchLike, includeSimilar?: boolean, includeTagExpansion?: boolean, searchLimitPerType?: number, similarLimit?: number, maxTagExpansions?: number, tagEventLimit?: number }} [options]
+   * @returns {Promise<PMMarketCandidate[]>}
+   */
   async function fetchCandidates(article, options = {}) {
     const fetchImpl = options.fetchImpl || (typeof fetch !== "undefined" ? fetch.bind(globalThis) : null);
     if (!fetchImpl) {
@@ -1541,7 +1700,8 @@
     }
 
     const searchOptions = {
-      limitPerType: options.searchLimitPerType
+      limitPerType: options.searchLimitPerType,
+      searchTags: options.includeTagExpansion === true
     };
     const requests = queries.flatMap((query, index) => (
       searchUrls(query, index, searchOptions).map((item) => ({ ...item, query }))
@@ -1551,10 +1711,13 @@
     }
     const results = await Promise.allSettled(requests.map(async (request) => {
       const payload = await fetchJson(fetchImpl, request.url);
-      return flattenPayload(payload, {
-        query: request.query,
-        source: request.source
-      });
+      return {
+        candidates: flattenPayload(payload, {
+          query: request.query,
+          source: request.source
+        }),
+        tags: payloadTags(payload)
+      };
     }));
 
     const fulfilled = results.filter((result) => result.status === "fulfilled");
@@ -1563,9 +1726,32 @@
       throw (firstError && firstError.reason) || new Error("Polymarket API request failed.");
     }
 
-    return dedupeCandidates(fulfilled.flatMap((result) => result.value));
+    const candidates = fulfilled.flatMap((result) => result.value.candidates);
+    if (options.includeTagExpansion === true) {
+      const selectedTags = selectTagExpansions(fulfilled.flatMap((result) => result.value.tags), article, options);
+      if (selectedTags.length) {
+        const tagResults = await Promise.allSettled(selectedTags.map(async (tag) => {
+          const request = tagEventRequest(tag, options);
+          const payload = await fetchJson(fetchImpl, request.url);
+          return flattenPayload(payload, {
+            query: request.query,
+            source: request.source
+          });
+        }));
+        candidates.push(...tagResults
+          .filter((result) => result.status === "fulfilled")
+          .flatMap((result) => result.value));
+      }
+    }
+
+    return dedupeCandidates(candidates);
   }
 
+  /**
+   * @param {PMAnalyzedArticle} article
+   * @param {{ fetchImpl?: PMFetchLike, minConfidence?: number, maxResults?: number, includeMaybe?: boolean, includeSimilar?: boolean, includeTagExpansion?: boolean, searchLimitPerType?: number, similarLimit?: number, maxTagExpansions?: number, tagEventLimit?: number }} [options]
+   * @returns {Promise<PMMarketCandidate[]>}
+   */
   async function searchAndRank(article, options = {}) {
     const candidates = await fetchCandidates(article, options);
     return rankCandidates(candidates, article, options);

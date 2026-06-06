@@ -2,7 +2,6 @@
   "name": "predmarketextension",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
     "test": "node --test",
     "test:polymarket:live": "node scripts/live-polymarket-smoke.js",
