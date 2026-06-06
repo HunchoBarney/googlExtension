@@ -517,8 +517,9 @@ button {
 
 .market-card {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 58px;
-  gap: 12px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 10px;
   min-height: 122px;
   padding: 12px 15px 11px;
   border: 1px solid rgba(220, 227, 238, 0.96);
@@ -596,7 +597,7 @@ button {
 
 .market-main {
   display: flex;
-  grid-column: 2;
+  grid-column: 2 / -1;
   grid-row: 1;
   min-height: 100%;
   flex-direction: column;
@@ -719,12 +720,13 @@ button {
 
 .market-meta-row {
   display: flex;
-  grid-column: 1 / 3;
+  grid-column: 1 / -1;
   grid-row: 2;
   align-items: center;
   gap: 12px;
   min-width: 0;
   margin-top: 2px;
+  padding-right: 68px;
   padding-top: 0;
   color: #647086;
   font-size: 11.5px;
@@ -768,12 +770,13 @@ button {
 
 .market-side {
   display: grid;
-  grid-column: 3;
-  grid-row: 1 / span 2;
+  grid-column: 2;
+  grid-row: 2;
   align-content: end;
   justify-items: end;
+  justify-self: end;
+  align-self: end;
   min-width: 0;
-  min-height: 100%;
 }
 
 .open-link {
@@ -1040,8 +1043,9 @@ html[data-view-mode="expanded"] body {
   }
 
   .market-card {
-    grid-template-columns: 53px minmax(0, 1fr) 42px;
-    gap: 9px;
+    grid-template-columns: 53px minmax(0, 1fr);
+    column-gap: 11px;
+    row-gap: 9px;
     padding: 12px;
   }
 
@@ -1301,8 +1305,9 @@ html[data-view-mode="expanded"] body {
   }
 
   .market-card {
-    grid-template-columns: 44px minmax(0, 1fr) 42px;
-    gap: 9px;
+    grid-template-columns: 44px minmax(0, 1fr);
+    column-gap: 10px;
+    row-gap: 7px;
     min-height: 76px;
     padding: 8px 10px;
   }
@@ -1332,6 +1337,10 @@ html[data-view-mode="expanded"] body {
   .market-detail-row {
     margin-bottom: 5px;
     font-size: 10px;
+  }
+
+  .market-meta-row {
+    padding-right: 56px;
   }
 
   .odds-row {
