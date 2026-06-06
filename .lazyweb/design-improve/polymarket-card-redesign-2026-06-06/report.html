@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Polymarket Card Redesign Improvement Notes</title>
+  <style>
+    body { margin: 32px; color: #111827; font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; }
+    main { max-width: 920px; margin: 0 auto; }
+    h1 { font-size: 28px; line-height: 1.15; margin: 0 0 16px; }
+    h2 { margin-top: 28px; font-size: 18px; }
+    .ideas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .idea { padding: 14px; border: 1px solid #dbe3ef; border-radius: 10px; background: white; }
+    .idea strong { display: block; margin-bottom: 6px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    figure { margin: 0; padding: 12px; border: 1px solid #dbe3ef; border-radius: 10px; background: white; }
+    img { width: 100%; height: 220px; object-fit: cover; border-radius: 7px; border: 1px solid #e5e7eb; }
+    figcaption { margin-top: 8px; color: #475569; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Polymarket Card Redesign Improvement Notes</h1>
+    <p>Current issue: the existing card has become cleaner after removing score badges, tags, trader counts, volume, and the Open button, but the probability bar still feels generic. The redesign should make the odds module feel intentional and make the whole card scan as one clickable object.</p>
+
+    <h2>Four Directions To Explore</h2>
+    <div class="ideas">
+      <div class="idea"><strong>1. Split Probability Rail</strong>A centered thin rail with Yes and No labels anchored at opposite ends, using subtle tinted end caps.</div>
+      <div class="idea"><strong>2. Odds Capsule</strong>A compact pill module below the metadata: Yes and No chips wrap a single probability track.</div>
+      <div class="idea"><strong>3. Trading Row</strong>A denser, table-inspired row with the image/title on the left and a right-aligned probability column.</div>
+      <div class="idea"><strong>4. Market Ticket</strong>A bordered ticket/card with a left accent strip and a more editorial stacked probability meter.</div>
+    </div>
+
+    <h2>References</h2>
+    <div class="grid">
+      <figure>
+        <img src="references/yahoo-finance-prediction-markets.png" alt="Yahoo Finance prediction market dashboard reference">
+        <figcaption>Use for dense finance-card hierarchy and low-friction scanning.</figcaption>
+      </figure>
+      <figure>
+        <img src="references/polymarket-finance-cards.png" alt="Polymarket finance market cards reference">
+        <figcaption>Use for prediction-market context and odds-first visual priority.</figcaption>
+      </figure>
+      <figure>
+        <img src="references/manifold-daily-markets.png" alt="Manifold daily markets list reference">
+        <figcaption>Use for market list rows where bars carry the key meaning.</figcaption>
+      </figure>
+      <figure>
+        <img src="references/polymarket-mobile-probability-cards.png" alt="Polymarket mobile probability cards reference">
+        <figcaption>Use for image-led candidate cards and strong percentage affordance.</figcaption>
+      </figure>
+    </div>
+  </main>
+</body>
+</html>
