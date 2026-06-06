@@ -465,24 +465,6 @@
     return formatProbability(outcome && outcome.price);
   }
 
-  function categoryLabel(candidate) {
-    const tags = Array.isArray(candidate.tags) ? candidate.tags : [];
-    const raw = text(candidate.category || tags[0] || "Market").trim();
-    if (!raw) {
-      return "Market";
-    }
-    if (/bitcoin|btc|crypto/i.test(raw) || /bitcoin|btc/i.test(`${candidate.title} ${candidate.eventTitle}`)) {
-      return "Price";
-    }
-    if (/fed|rate|rates/i.test(raw) || /fed|rate|rates/i.test(`${candidate.title} ${candidate.eventTitle}`)) {
-      return "Rates";
-    }
-    if (/cpi|pmi|macro|econom/i.test(raw) || /cpi|pmi/i.test(`${candidate.title} ${candidate.eventTitle}`)) {
-      return "Macro";
-    }
-    return raw.split(/[\s/-]+/).filter(Boolean)[0].slice(0, 10);
-  }
-
   function appendOutcomeRows(main, candidate) {
     const outcomes = candidateOutcomeOptions(candidate);
     const primary = outcomes[0] || { label: "Yes", price: null, percent: null };
@@ -520,10 +502,6 @@
     return outcomes.slice(2);
   }
 
-  function scoreBadgeLabel(candidate) {
-    return candidate && candidate.matchTier === "maybe" ? "Maybe" : "Match";
-  }
-
   function appendCardContents(card, candidate, options = {}) {
     const titleText = options.titleText || candidate.eventTitle || candidate.title || candidate.question || "Untitled market";
 
@@ -539,16 +517,13 @@
 
     const details = document.createElement("div");
     details.className = "market-detail-row";
-    const chip = document.createElement("span");
-    chip.className = "category-chip";
-    chip.textContent = categoryLabel(candidate);
     const expiry = document.createElement("span");
     expiry.className = "expiry-meta";
     const expiryText = document.createElement("span");
     expiryText.className = "expiry-text";
     expiryText.textContent = formatExpiry(candidate);
     expiry.append(createCalendarIcon(), expiryText);
-    details.append(chip, expiry);
+    details.append(expiry);
     main.append(details);
 
     const extraOutcomes = appendOutcomeRows(main, candidate);
@@ -586,20 +561,10 @@
     }
     const side = document.createElement("div");
     side.className = "market-side";
-    const score = Math.round(Number(candidate.confidence || candidate.parentConfidence || 0));
-    const isMedium = Boolean(score && score < 65);
-    const scoreBadge = document.createElement("div");
-    scoreBadge.className = `market-score${isMedium ? " is-medium" : " is-high"}`;
-    const scoreValue = document.createElement("strong");
-    scoreValue.textContent = score ? String(score) : "--";
-    const scoreLabel = document.createElement("span");
-    scoreLabel.textContent = scoreBadgeLabel(candidate);
-    scoreBadge.append(scoreValue, scoreLabel);
-
     const open = document.createElement("span");
     open.className = "open-link";
     open.append("Open", createOpenIcon());
-    side.append(scoreBadge, open);
+    side.append(open);
 
     card.append(main, side);
     if (meta.childNodes.length) {

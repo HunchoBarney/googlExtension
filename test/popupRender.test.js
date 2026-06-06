@@ -69,7 +69,9 @@ test("renders parent event cards with API image, option percentages, movement, a
     movement: { direction: "up", value: 0.02 },
     volume: 1250000,
     traderCount: 12600,
-    confidence: 73
+    confidence: 73,
+    category: "Politics",
+    tags: ["Iran"]
   }]);
 
   const card = results.querySelector(".market-card");
@@ -81,7 +83,12 @@ test("renders parent event cards with API image, option percentages, movement, a
   assert.ok(card.querySelector(".probability-track"));
   assert.match(card.textContent, /12.6K traders/);
   assert.match(card.textContent, /\$1.3M volume/);
-  assert.match(card.textContent, /Match/);
+  assert.equal(card.querySelector(".market-score"), null);
+  assert.equal(card.querySelector(".category-chip"), null);
+  assert.doesNotMatch(card.textContent, /73/);
+  assert.doesNotMatch(card.textContent, /Match/);
+  assert.doesNotMatch(card.textContent, /Politics/);
+  assert.doesNotMatch(card.textContent, /Iran/);
   assert.match(card.textContent, /Open/);
 });
 
@@ -238,7 +245,7 @@ test("renders unavailable option prices as n/a instead of zero", () => {
   assert.doesNotMatch(text, /No0%/);
 });
 
-test("renders maybe-related cards with a Maybe badge label", () => {
+test("does not expose maybe score badges on related cards", () => {
   const { renderer, results } = setupRenderer();
 
   renderer.renderResults(results, [{
@@ -255,13 +262,21 @@ test("renders maybe-related cards with a Maybe badge label", () => {
     ],
     movement: { direction: "flat", value: 0 },
     confidence: 46,
-    matchTier: "maybe"
+    parentConfidence: 52,
+    matchTier: "maybe",
+    category: "Tech",
+    tags: ["AI"]
   }]);
 
-  const score = results.querySelector(".market-score");
-  assert.match(score.textContent, /46/);
-  assert.match(score.textContent, /Maybe/);
-  assert.doesNotMatch(score.textContent, /Match/);
+  const card = results.querySelector(".market-card");
+  assert.equal(card.querySelector(".market-score"), null);
+  assert.equal(card.querySelector(".category-chip"), null);
+  assert.doesNotMatch(card.textContent, /46/);
+  assert.doesNotMatch(card.textContent, /52/);
+  assert.doesNotMatch(card.textContent, /Maybe/);
+  assert.doesNotMatch(card.textContent, /Match/);
+  assert.doesNotMatch(card.textContent, /Tech/);
+  assert.doesNotMatch(card.textContent, /AI/);
 });
 
 test("renders no-match and API error states in the market-first surface", () => {

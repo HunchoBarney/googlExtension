@@ -629,21 +629,6 @@ button {
   line-height: 1.2;
 }
 
-.category-chip {
-  display: inline-flex;
-  max-width: 72px;
-  align-items: center;
-  padding: 2px 6px 2px;
-  border: 1.5px solid rgba(10, 116, 255, 0.72);
-  border-radius: 5px;
-  background: rgba(10, 116, 255, 0.065);
-  color: #0870f8;
-  font-size: 10.5px;
-  font-weight: 720;
-  line-height: 1.05;
-  text-transform: uppercase;
-}
-
 .expiry-meta {
   display: inline-flex;
   min-width: 0;
@@ -785,46 +770,10 @@ button {
   display: grid;
   grid-column: 3;
   grid-row: 1 / span 2;
-  align-content: space-between;
+  align-content: end;
   justify-items: end;
   min-width: 0;
   min-height: 100%;
-}
-
-.market-score {
-  display: grid;
-  min-width: 40px;
-  place-items: center;
-  padding: 5px;
-  border: 1px solid rgba(22, 155, 84, 0.36);
-  border-radius: 9px;
-  background: rgba(239, 251, 244, 0.96);
-  color: var(--green);
-  font-weight: 780;
-  line-height: 1;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.035);
-}
-
-.market-score strong {
-  font-size: 18px;
-}
-
-.market-score span {
-  margin-top: 2px;
-  font-size: 10.5px;
-  font-weight: 680;
-}
-
-.market-score.is-high {
-  border-color: rgba(22, 155, 84, 0.36);
-  background: rgba(239, 251, 244, 0.96);
-  color: var(--green);
-}
-
-.market-score.is-medium {
-  border-color: rgba(237, 146, 0, 0.42);
-  background: rgba(255, 248, 235, 0.96);
-  color: var(--amber);
 }
 
 .open-link {
@@ -1385,11 +1334,6 @@ html[data-view-mode="expanded"] body {
     font-size: 10px;
   }
 
-  .category-chip {
-    padding: 2px 4px;
-    font-size: 9.5px;
-  }
-
   .odds-row {
     margin-bottom: 4px;
     font-size: 10.5px;
@@ -1397,20 +1341,6 @@ html[data-view-mode="expanded"] body {
 
   .probability-track {
     height: 6px;
-  }
-
-  .market-score {
-    min-width: 34px;
-    padding: 4px 3px 3px;
-  }
-
-  .market-score strong {
-    font-size: 14.5px;
-  }
-
-  .market-score span {
-    margin-top: 2px;
-    font-size: 8.5px;
   }
 
   .open-link {
