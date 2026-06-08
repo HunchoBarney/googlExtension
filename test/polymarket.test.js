@@ -123,6 +123,35 @@ test("flattens grouped events with markets", () => {
   assert.equal(candidates[0].sourceQueries[0], "Bitcoin");
 });
 
+test("grouped parent events preserve the top child market question for trade view", () => {
+  const ranked = [
+    {
+      ...polymarket.normalizeMarket({
+        id: "market-iran-dec",
+        question: "Will the US and Iran reach a permanent peace deal in 2026?",
+        outcomes: "[\"Yes\", \"No\"]",
+        outcomePrices: "[\"0.32\", \"0.68\"]",
+        active: true,
+        closed: false
+      }, {
+        id: "event-iran",
+        slug: "us-x-iran-permanent-peace-deal-by",
+        title: "US x Iran permanent peace deal by...?",
+        active: true,
+        closed: false
+      }),
+      confidence: 91
+    }
+  ];
+
+  const [group] = polymarket.groupCandidatesByEvent(ranked, { maxGroups: 5 });
+
+  assert.equal(group.title, "US x Iran permanent peace deal by...?");
+  assert.equal(group.eventTitle, "US x Iran permanent peace deal by...?");
+  assert.equal(group.question, "Will the US and Iran reach a permanent peace deal in 2026?");
+  assert.equal(group.markets[0].question, "Will the US and Iran reach a permanent peace deal in 2026?");
+});
+
 test("normalizes Polymarket image variants from market and event payloads", () => {
   const marketImage = polymarket.normalizeMarket({
     id: "image-market",

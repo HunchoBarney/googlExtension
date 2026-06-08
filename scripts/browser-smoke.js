@@ -305,6 +305,7 @@ async function readPopupState(root, sessionId) {
         sourceBadgeLabels: [...document.querySelectorAll(".source-badge")].map((badge) => badge.getAttribute("aria-label") || badge.textContent.trim()),
         tradeViewCount: document.querySelectorAll(".trade-view").length,
         tradeViewTitle: document.querySelector(".trade-hero h2")?.textContent.trim() || "",
+        tradeMarketSource: document.querySelector(".trade-view .source-badge")?.getAttribute("aria-label") || "",
         tradeBuyText: document.querySelector(".trade-buy-button")?.textContent.trim() || "",
         tradeOrderBookRows: document.querySelectorAll(".trade-book-row").length,
         tradeBackButtonCount: document.querySelectorAll("[data-trade-back]").length,
@@ -446,7 +447,7 @@ async function capturePopupScreenshot(root, sessionId, prefix) {
 
 async function clickFirstPopupCard(root, sessionId) {
   const card = await evaluatePopup(root, sessionId, `(() => {
-    const node = document.querySelector("a.market-card");
+    const node = document.querySelector('a.market-card[data-market-source="Polymarket"]') || document.querySelector("a.market-card");
     if (!node) {
       return null;
     }
@@ -598,6 +599,7 @@ async function readExpandedPageState(page) {
         sourceBadgeLabels: [...document.querySelectorAll(".source-badge")].map((badge) => badge.getAttribute("aria-label") || badge.textContent.trim()),
         tradeViewCount: document.querySelectorAll(".trade-view").length,
         tradeViewTitle: document.querySelector(".trade-hero h2")?.textContent.trim() || "",
+        tradeMarketSource: document.querySelector(".trade-view .source-badge")?.getAttribute("aria-label") || "",
         tradeBuyText: document.querySelector(".trade-buy-button")?.textContent.trim() || "",
         tradeOrderBookRows: document.querySelectorAll(".trade-book-row").length,
         tradeBackButtonCount: document.querySelectorAll("[data-trade-back]").length,
@@ -1358,6 +1360,7 @@ async function runActionPopupSmoke({
         ? await capturePopupScreenshot(root, popupSessionId, "browser-smoke-trade")
         : "";
       const initialChartPath = tradeState.visual.tradeChartPath;
+      const hyperliquidTrade = tradeState.visual.tradeMarketSource === "Hyperliquid";
       await clickPopupSelector(root, popupSessionId, "[data-trade-range='1Y']");
       const rangeState = await waitForPopupCondition(
         root,
@@ -1373,7 +1376,7 @@ async function runActionPopupSmoke({
         root,
         popupSessionId,
         (state) => state.visual.tradeActiveSide === "no" &&
-          /^Buy\s+No/.test(state.visual.tradeBuyText),
+          (hyperliquidTrade ? /^Buy\s+Short/.test(state.visual.tradeBuyText) : /^Buy\s+No/.test(state.visual.tradeBuyText)),
         "trade side update"
       );
 
@@ -1382,7 +1385,7 @@ async function runActionPopupSmoke({
         root,
         popupSessionId,
         (state) => state.visual.tradeAmountValue === "$1,000" &&
-          /Est\. shares:/.test(state.visual.tradeEstimateText),
+          (hyperliquidTrade ? /Est\. contracts:/.test(state.visual.tradeEstimateText) : /Est\. shares:/.test(state.visual.tradeEstimateText)),
         "trade max amount update"
       );
 

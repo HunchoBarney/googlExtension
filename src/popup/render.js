@@ -705,10 +705,11 @@
 
   function chartBasisPrice(outcome) {
     const basis = Number(outcome && outcome.chartPrice);
-    if (Number.isFinite(basis)) {
+    if (Number.isFinite(basis) && basis > 0) {
       return basis;
     }
-    return Number(outcome && outcome.price);
+    const price = Number(outcome && outcome.price);
+    return Number.isFinite(price) && price > 0 ? price : 0.5;
   }
 
   function chartDisplayPrice(outcome) {
@@ -727,19 +728,20 @@
       percent: candidate.primaryPercent
     };
     const markPrice = displayPriceNumber(candidate);
-    if (sourceName(candidate) === "Hyperliquid" && markPrice !== null && !hasOutcomePrice(primary) && !hasOutcomePrice(outcomes[1])) {
-      const displayValue = formatAssetPrice(markPrice);
+    if (sourceName(candidate) === "Hyperliquid" && !hasOutcomePrice(primary) && !hasOutcomePrice(outcomes[1])) {
+      const displayValue = markPrice === null ? "n/a" : formatAssetPrice(markPrice);
+      const price = markPrice === null ? null : markPrice;
       return [
         {
           label: "Long",
-          price: markPrice,
+          price,
           chartPrice: 0.5,
           displayValue,
           unitName: "contracts"
         },
         {
           label: "Short",
-          price: markPrice,
+          price,
           chartPrice: 0.5,
           displayValue,
           unitName: "contracts"
@@ -976,6 +978,13 @@
   function orderRows(price, side, seedText) {
     const seed = hashText(seedText);
     const numericPrice = Number(price);
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      return Array.from({ length: 5 }, () => ({
+        price: "n/a",
+        shares: "n/a",
+        total: "n/a"
+      }));
+    }
     if (Number.isFinite(numericPrice) && numericPrice > 1) {
       const step = numericPrice >= 1000 ? Math.max(1, Math.round(numericPrice * 0.0005)) : numericPrice >= 10 ? 0.05 : 0.01;
       return Array.from({ length: 5 }, (_, index) => {
@@ -1004,6 +1013,13 @@
     });
   }
 
+  function formatBookCell(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric)
+      ? numeric.toLocaleString("en-US")
+      : text(value, "n/a");
+  }
+
   function createOrderBook(candidate, outcomes) {
     const book = document.createElement("section");
     book.className = "trade-order-book";
@@ -1025,12 +1041,16 @@
       rows.className = "trade-book-rows";
       rows.dataset.tradeBookSide = side;
       const rowData = orderRows(outcomes[0].price, side, `${marketKey(candidate)}:${side}`);
-      const maxShares = Math.max(...rowData.map((row) => row.shares));
+      const maxShares = Math.max(1, ...rowData.map((row) => Number(row.shares)).filter((value) => Number.isFinite(value) && value > 0));
       for (const row of rowData) {
         const line = document.createElement("div");
         line.className = "trade-book-row";
-        line.style.setProperty("--depth", `${Math.max(22, Math.round((row.shares / maxShares) * 100))}%`);
-        for (const value of [row.price, row.shares.toLocaleString("en-US"), row.total.toLocaleString("en-US")]) {
+        const shares = Number(row.shares);
+        const depth = Number.isFinite(shares) && shares > 0
+          ? Math.max(22, Math.round((shares / maxShares) * 100))
+          : 0;
+        line.style.setProperty("--depth", `${depth}%`);
+        for (const value of [row.price, formatBookCell(row.shares), formatBookCell(row.total)]) {
           const span = document.createElement("span");
           span.textContent = value;
           line.append(span);

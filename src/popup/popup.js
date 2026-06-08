@@ -657,6 +657,13 @@
 
   function tradeBookRows(price, side) {
     const numericPrice = Number(price);
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      return Array.from({ length: 5 }, () => ({
+        price: "n/a",
+        shares: "n/a",
+        total: "n/a"
+      }));
+    }
     if (Number.isFinite(numericPrice) && numericPrice > 1) {
       const step = numericPrice >= 1000 ? Math.max(1, Math.round(numericPrice * 0.0005)) : numericPrice >= 10 ? 0.05 : 0.01;
       return Array.from({ length: 5 }, (_item, index) => {
@@ -685,19 +692,30 @@
     });
   }
 
+  function formatTradeBookCell(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric)
+      ? numeric.toLocaleString("en-US")
+      : String(value || "n/a");
+  }
+
   function updateTradeOrderBook(price) {
     for (const rows of resultsRegion.querySelectorAll("[data-trade-book-side]")) {
       const side = rows.dataset.tradeBookSide;
       const rowData = tradeBookRows(price, side);
-      const maxShares = Math.max(...rowData.map((row) => row.shares));
+      const maxShares = Math.max(1, ...rowData.map((row) => Number(row.shares)).filter((value) => Number.isFinite(value) && value > 0));
       for (const [index, line] of Array.from(rows.querySelectorAll(".trade-book-row")).entries()) {
         const row = rowData[index];
         if (!row) {
           continue;
         }
-        line.style.setProperty("--depth", `${Math.max(22, Math.round((row.shares / maxShares) * 100))}%`);
+        const shares = Number(row.shares);
+        const depth = Number.isFinite(shares) && shares > 0
+          ? Math.max(22, Math.round((shares / maxShares) * 100))
+          : 0;
+        line.style.setProperty("--depth", `${depth}%`);
         const cells = line.querySelectorAll("span");
-        const values = [row.price, row.shares.toLocaleString("en-US"), row.total.toLocaleString("en-US")];
+        const values = [row.price, formatTradeBookCell(row.shares), formatTradeBookCell(row.total)];
         for (const [cellIndex, cell] of Array.from(cells).entries()) {
           cell.textContent = values[cellIndex] || "";
         }

@@ -469,7 +469,8 @@
    */
   function normalizeMarket(raw, event = {}, meta = {}) {
     const outcomes = parseOutcomes(raw);
-    const title = normalizeWhitespace(raw.question || raw.title || event.title || event.question || "");
+    const question = normalizeWhitespace(raw.question || "");
+    const title = normalizeWhitespace(question || raw.title || event.title || event.question || "");
     const eventTitle = normalizeWhitespace(event.title || event.question || "");
     const description = normalizeWhitespace([raw.description, event.description].filter(Boolean).join(" "));
     const category = normalizeWhitespace(raw.category || event.category || "");
@@ -491,6 +492,7 @@
       type: raw.question ? "market" : "event",
       slug: raw.slug || event.slug || "",
       eventSlug: event.slug || raw.eventSlug || "",
+      question,
       title,
       eventTitle,
       description,
@@ -1434,6 +1436,7 @@
         const parentRank = article ? rankCandidate(parentCandidate, article) : null;
         return {
           ...group,
+          question: primary.question || group.question || "",
           primaryOutcome: primary.primaryOutcome,
           secondaryOutcome: primary.secondaryOutcome,
           primaryPrice: primary.primaryPrice,

@@ -361,6 +361,42 @@ test("trade view uses Hyperliquid mark prices instead of fake binary fallbacks",
   assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /31¢/);
 });
 
+test("trade view does not invent binary prices for Hyperliquid markets without a mark", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderTradeView(results, {
+    id: "hyperliquid:NEW",
+    eventId: "hyperliquid:NEW",
+    title: "NEW perpetual market",
+    eventTitle: "NEW perpetual market",
+    url: "https://app.hyperliquid.xyz/trade/NEW",
+    primaryOutcome: "Mark",
+    secondaryOutcome: "24h",
+    primaryPrice: null,
+    secondaryPrice: null,
+    primaryPercent: null,
+    outcomeOptions: [],
+    marketSource: "Hyperliquid",
+    sourceLabel: "Hyperliquid",
+    source: "hyperliquid",
+    raw: {
+      context: {}
+    }
+  });
+
+  const view = results.querySelector(".trade-view");
+  const ticketText = view.querySelector(".trade-ticket").textContent;
+  assert.equal(view.querySelector(".trade-chart-price").textContent, "n/a");
+  assert.match(ticketText, /Long\s+n\/a/);
+  assert.match(ticketText, /Short\s+n\/a/);
+  assert.equal(view.querySelector(".trade-buy-button").textContent, "Buy Long");
+  assert.match(view.querySelector(".trade-estimate").textContent, /Est\. contracts: 0/);
+  assert.doesNotMatch(ticketText, /Yes\s+1/);
+  assert.doesNotMatch(ticketText, /No\s+99/);
+  assert.match(view.querySelector(".trade-order-book").textContent, /n\/a/);
+  assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /\d+¢/);
+});
+
 test("renders option-agnostic labels for team and multi-option markets", () => {
   const { renderer, results } = setupRenderer();
 

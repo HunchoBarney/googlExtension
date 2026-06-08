@@ -864,7 +864,7 @@ svg circle {
 
 .popup-shell.is-trade-view .results-region {
   gap: 10px;
-  padding: 0 10px 16px;
+  padding: 0 14px 16px;
 }
 
 .popup-shell.is-trade-view .surface-message {
@@ -1012,17 +1012,17 @@ svg circle {
 
 .trade-hero-copy {
   display: grid;
-  gap: 12px;
+  gap: 9px;
   min-width: 0;
 }
 
 .trade-hero h2 {
   margin: 0;
   color: #f8fafc;
-  font-size: 27px;
+  font-size: 20px;
   font-weight: 780;
   letter-spacing: 0;
-  line-height: 1.14;
+  line-height: 1.18;
 }
 
 .trade-meta {
@@ -1037,7 +1037,7 @@ svg circle {
 .trade-ticket,
 .trade-order-book {
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 22px;
+  border-radius: 21px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
     #151a1f;
@@ -1052,7 +1052,7 @@ svg circle {
   position: relative;
   height: 198px;
   overflow: hidden;
-  border-radius: 22px 22px 0 0;
+  border-radius: 21px 21px 0 0;
 }
 
 .trade-chart-svg {
@@ -1222,14 +1222,14 @@ svg circle {
   grid-template-columns: 1fr 1fr;
   gap: 0;
   overflow: hidden;
-  padding: 14px 0;
+  padding: 13px 0;
 }
 
 .trade-book-column {
   display: grid;
-  gap: 10px;
+  gap: 9px;
   min-width: 0;
-  padding: 0 14px;
+  padding: 0 12px;
 }
 
 .trade-book-ask {
@@ -1238,7 +1238,7 @@ svg circle {
 
 .trade-book-column h3 {
   margin: 0;
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 720;
   line-height: 1;
 }
@@ -1254,14 +1254,14 @@ svg circle {
 .trade-book-header,
 .trade-book-row {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
   font-variant-numeric: tabular-nums;
 }
 
 .trade-book-header {
   color: #9ba1ab;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .trade-book-rows {
@@ -1271,13 +1271,13 @@ svg circle {
 
 .trade-book-row {
   position: relative;
-  min-height: 34px;
+  min-height: 31px;
   align-items: center;
   overflow: hidden;
   padding: 0 4px;
   border-radius: 5px;
   color: #f3f5f8;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 520;
 }
 
