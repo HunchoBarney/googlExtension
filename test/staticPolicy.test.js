@@ -27,11 +27,12 @@ test("manifest keeps manual-activation MV3 permissions narrow", () => {
   assert.deepEqual(manifest.permissions.sort(), ["activeTab", "scripting"]);
   assert.deepEqual(manifest.host_permissions, [
     "https://gamma-api.polymarket.com/*",
-    "https://data-api.polymarket.com/*"
+    "https://data-api.polymarket.com/*",
+    "https://api.hyperliquid.xyz/*"
   ]);
   assert.equal(manifest.content_scripts, undefined);
   assert.equal(manifest.action.default_popup, undefined);
-  assert.equal(manifest.action.default_title, "Find Polymarket matches");
+  assert.equal(manifest.action.default_title, "Find market matches");
   assert.ok(manifest.background.service_worker.endsWith("src/background/serviceWorker.js"));
 
   const permissionText = JSON.stringify(manifest);
@@ -49,4 +50,17 @@ test("source does not include page monitoring or AI-service calls", () => {
   assert.doesNotMatch(source, /chrome\.webNavigation/);
   assert.doesNotMatch(source, /chrome\.declarativeContent/);
   assert.doesNotMatch(source, /api\.openai\.com|anthropic\.com|generativelanguage\.googleapis\.com|api\.mistral\.ai/i);
+});
+
+test("popup visible controls have menu semantics and hidden utilities are not tabbable", () => {
+  const popup = fs.readFileSync(path.join(root, "src/popup/popup.html"), "utf8");
+
+  assert.match(popup, /id="menu-button"[^>]*aria-haspopup="menu"/);
+  assert.match(popup, /id="menu-button"[^>]*aria-controls="action-menu"/);
+  assert.match(popup, /id="action-menu"[^>]*role="menu"/);
+  assert.match(popup, /id="action-menu"[^>]*aria-hidden="false"/);
+
+  for (const id of ["market-search-input", "market-search-button", "related-tab", "trending-tab", "search-tab"]) {
+    assert.match(popup, new RegExp(`id="${id}"[^>]*tabindex="-1"`));
+  }
 });

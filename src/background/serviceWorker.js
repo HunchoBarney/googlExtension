@@ -1,7 +1,7 @@
 "use strict";
 
 const POPUP_WIDTH = 500;
-const POPUP_HEIGHT = 932;
+const POPUP_HEIGHT = 850;
 let matcherWindowId = null;
 
 function logExtensionError(message, error) {

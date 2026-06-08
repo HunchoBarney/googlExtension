@@ -10,14 +10,15 @@ const {
 } = require("./qaUtils");
 
 const ROOT = path.join(__dirname, "..");
+
 const FIXTURE_IMAGES = [
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY+AWUPgPAAGgATv/K5mwAAAAAElFTkSuQmCC",
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY+C1rvgPAALZAcCrGfZEAAAAAElFTkSuQmCC",
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXYzjpx/EfAAUiAh8zVE9NAAAAAElFTkSuQmCC",
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY+C1rvgPAALZAcCrGfZEAAAAAElFTkSuQmCC"
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAB80lEQVR42u3bwU3DMBQG4MyAGACJDThwYgfmYBLEbgwE4gDtoVKoWnDsFzuxvye9S+sq6v/VstO60+3Dy/ee++Pza9c9AQAAAAAAAAAAAAAAAAAAAAAAbBDg/um1agMAAAAAgH0AHCs12NSxABIB5pUSfupYAAkAlyol/BQEAGaANQCAXRAAAAAAAACwP4DSnRGAAoCIewMAmQBRd8c1AI5lBjSaAfOyBlReAy6VXdCKADdvz7/6Up2PARAAcB7qEoBaEF0CXAszB2BtiG4AUkIsAZi/FsAZwNIgcwHWWLR3D5ATZtRrABw6J9Co8cMD5IYaORZARrCR44Y9nFvy6Y4aE4HQHUBKeKXPDw9QutXMfW4NBAAA4sP/L8ylj6c2gESE1Fp6LQCBCDnXARCEkHuN7gG2Xu93j4t7En5bhEn4bRHMADPAGmAXFLQLAtD4PgBA4zthAI2/CxoCYKvfhuaEDwBAH7+I5YbfJUCL34SHBNjKqYiS8LsCaHUuaGiA1ifjSsPvAqDl2VAAhz6+iRanoyPC7wbghFDr/wFR4XcFMO81ACJD7x7gP4hae/zhAa5B1NjfA/ij19rRAMhEaBX+0AAnhJbhDw+whQYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOgT4Ae2umEuuaN/rwAAAABJRU5ErkJggg==",
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAFgklEQVR42u3c1XdUVxTH8fPaV7xoIxAj7kKUOFHi7i7EsJTg7u7uhOKS4sW1UFt1YbV96V/Qt1/P0AUL6CRMhjvd997ZD/spb5/vXWcmZ865YvqfzzDtj6eY+vvnmPr8CTqeP0bHb4/Q/utDtP/yAG0/30fbT/fQ+uNdtP5wBy3f30bLd7cx5dtbaP7mppzP0PT1DTR9dR2NX15D4xdX0fDsChqeXkb9k0tyPkXd4x7UPepB7cOLqHlwATX3z6P63jlU3z2LqjtnUHX7NCpvnULlzZOouHFCzicovy7n2nGUXe1G6ZVjKL18FCWXjqCk5zCKew6h+OJBFF04gKLz+1F4bh8Kz+5FwRk5p/cg/9Ru5J/chbwTO5F7fAdyu7cjp3sbco5tRfbRLcg+shlZhzch69BGZB6Uc2ADMvavR8a+dZi8dy3S96xB+u7VSNu1Cmk7VyJ1xwqkbl+OlG3LkLJ1GZK3LEXy5iVI2rQYSRsXYdKGhUhcvwCJ6+YjYe08JKyZi/hVc+TMRtzKLsSt6ELs8lmIXfYxYpZ2ImbJTEQvnoHoRdMhGJ8Of+LCaRCMT4cftWCqDMD4ZPhR8zsgGJ8OP3JeuwzA+GT4kXPbIBifDj9iTqsMwPhk+BGzZQDGp8MP72qRARifDD981hQIxqfDD+tslgEYnww/rLMJgvHp8ENnNsoAjE+GHzqjAYLx6fAnTK+HYHw6/JBpdYYAjE+FH9JRC8H4dPjBHTUyAOO/gf+B3ZhXY2n84PZqCMaf/wZ6b2MJ/KA2QwArxjcF/vVRGj+otQrCGvH7Qv4Lf7+at/+mNH5gS6UMwPj/ge8tgtL4gc0VENaO3xt8bxGUxA9oLjcEYHwq/ICmMgjGNw3/RQCF8f0bS2UAxn8n/MtRGt+/oQSC8d8Nbyl8v/piCMbvG94Sy85LfN/aIhmA8Y3DW+AD921839pCCMZ/c5T+nt8Xvk9NgQyg8+0FNeP7VOdDMD4dvneVIQDjk+F7V+ZB6HVLWQv4XhW5MoCV4BsLQI3vVZ4Dwfh0+J5l2YYA2v4Z0ZylRy34niVZEHrHN7qpphJ8j5JMGYDxyfA9ijMg9HB6wdSlR2347kWTIfSK/3/t578PvlthugzA+GT4bgVpEFo7sWbW0qNSfNe8VBlAZ/jGAqgV3zUvBYLx6fDH5xoCaOSgrDlLj9rxx+ckQ+gF32gAleO7ZCfJABo4Iq5XfJesSRBawjd56dEIvnNmogygcXxjAbSC75yRAKEVfFOffi3hO02OlwFUei3InKdfa/hO6XEQesF/EUBj+I5psTIA45PhO6bGQKgZvz8/rmsR3yElGkJr+MYCaBV/XPJEGUAl93CtEX9ckgzATz4d/thJUTKARvH/DaBt/LGJkRCMT4dvnxAhA6jgP9z+3lzRC759fDiEGm6gWyu+XVyYDKAQfn/Rzbkspzd8u9hQCAp8c66IGkZv+LYxE2QAC+CbAtzfO1t6xLeNDoFQ+k4W45uObzMxWAZQ8ANXaXw9rvmv49tEBUFQ4/f21FsD/keRgRBKnlJWAt6a8MdEBMgAFjqrac7XUj3s7fQHf0y4DKD0iTVzRqs/prwv/uhQfxnAgtsLfb78QkNHRyyFPzrUD0Lp92pa8gV3esMfNcFXBlDxS031jj8qxAeC8enwRwZ7ywCMT4Y/MsgLgvHp8EcEeMoAjE+GP8LfA4Lx6fCH+7vLAIxPhj/czw2C8enwP/R1hWB8OvxhPuNlAMYnwx/mLQMwPh3+UE8XGYDxyfCHejpDMD4d/hAPJ0MAxqfCH+LuCMH4dPiD3RxkAMYnwx/sOg6C8enwB7mMlQEYnwx/kLM9BOPT4Q90tpMBGJ8Mf6CTLQTj0+EPcLSRARifDH+Agw3+AaS9Uc6r/WIvAAAAAElFTkSuQmCC",
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAACDklEQVR42u3cS24CMQyA4Vn3Gl33JuWevQ3b3oZqdhUaEuJH7MR/pGwQE4Q/nNeEOe6fX4+V68f3z9L1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAoz5+bwBEAJyBf64AAFAD4Cr4VggAkAEAAMAsiHUAAAAAYFXPAkAQwP8CAAD6GUzvGm2bJQAkc/jeNVZtWvfpowBaqO0BJAF99/0W2XJ47OP0rrFuMyKoVl1VmS4IgECAVsBGisdAXWYW5FVYBwinmBmC7wYg3fGUXBedAVPGAO89f829gujgu09DVwBoBWBmkSzWjuj7vtr7xa0gRJTW52+dAVdfNgpgJDumA7x6TTsGWP1ye69Zjw/TZkFSnNFB2BpAk1VlT0V4BVzSfsmDWdKBsnWt5jNKZYC227F4b+kuyHLmop1RlTyYpQ22FVpaAO/NOM1CSbvQCgOw/lX32t2hmAB49eutdncqSwKQAc5z+9F2S48BURnALGhhgC3XAbNnQayEk9+UHw3Mu7/8pfeCMgGU2w3NtBL2Cnj5Log7YoEA3BMOrJyKSJIB5c8FZT4bWuZkXObDuSXOhq7wL0mOp290PJ0MUABo93YAUIwBS/1LEgAATKehkf8rLp8BXgElA3haCgAAAMATswDgmXEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkqn+ijf7moaLldwAAAABJRU5ErkJggg==",
+  "data:image/png;base64,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"
 ];
 const VIEWPORTS = [
-  { name: "popup", width: 500, height: 900 },
+  { name: "popup", width: 500, height: 850 },
   { name: "compact", width: 500, height: 510 },
   { name: "mid", width: 390, height: 800 },
   { name: "narrow", width: 320, height: 840 }
@@ -36,91 +37,11 @@ function chromeExecutable() {
 function pageHtml() {
   const css = fs.readFileSync(path.join(ROOT, "src/popup/popup.css"), "utf8");
   const render = fs.readFileSync(path.join(ROOT, "src/popup/render.js"), "utf8");
-  return `<!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Popup Layout Smoke</title>
-        <style>${css}</style>
-      </head>
-      <body>
-        <main class="popup-shell">
-          <header class="popup-header">
-            <div class="brand-lockup">
-              <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
-                <path d="M8 9.8 30.4 3.5c1.2-.3 2.3.6 2.3 1.8v29.4c0 1.2-1.2 2.1-2.4 1.7L8 28.9V9.8Z" />
-                <path d="M8.4 19.7h23.8M8.5 10l23.6 9.7" />
-              </svg>
-              <div>
-                <h1>Polymarket</h1>
-                <p>Article Matcher</p>
-              </div>
-            </div>
-            <div class="header-actions">
-              <button class="icon-button" id="refresh-button" type="button" title="Run again" aria-label="Run again">
-                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M20 11a8.1 8.1 0 1 0-2.4 5.8" />
-                  <path d="M20 4.8V11h-6.2" />
-                </svg>
-              </button>
-              <button class="icon-button" id="settings-button" type="button" title="Settings" aria-label="Settings">
-                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 15.4a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8Z" />
-                  <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.3a2 2 0 0 1-4 0V21a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 0 1 4.1 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H2.7a2 2 0 0 1 0-4H3a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 0 1 7 4.1l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V2.7a2 2 0 0 1 4 0V3a1.7 1.7 0 0 0 1 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 0 1 19.9 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1A1.7 1.7 0 0 0 21 10h.3a2 2 0 0 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z" />
-                </svg>
-              </button>
-            </div>
-          </header>
-          <form class="market-search" id="market-search-form" role="search">
-            <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m16.2 16.2 4.3 4.3" />
-            </svg>
-            <input id="market-search-input" type="search" placeholder="Search any market" autocomplete="off" spellcheck="false" aria-label="Search Polymarket markets">
-            <button class="search-filter-button" id="market-search-button" type="submit" title="Search markets" aria-label="Search markets">
-              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7h16" />
-                <path d="M4 17h16" />
-                <path d="M9 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z" />
-                <path d="M19 17a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z" />
-              </svg>
-            </button>
-          </form>
-          <section id="status-region" class="status-region" aria-live="polite"></section>
-          <nav class="market-tabs" aria-label="Market views">
-            <button class="tab-button is-active" id="related-tab" type="button" data-tab="related">
-              <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="7" />
-                <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
-              </svg>
-              Related
-            </button>
-            <button class="tab-button" id="trending-tab" type="button" data-tab="trending">
-              <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M13.5 2.6C10 5.5 8.3 8.5 8.3 11.5c0 .7.1 1.4.4 2-.8-.5-1.3-1.3-1.5-2.5C5.8 12.5 5 14.1 5 16a7 7 0 0 0 14 0c0-2.8-1.7-4.5-3.1-6.1-1.2-1.4-2.2-2.8-2.4-7.3Z" />
-                <path d="M11.1 17.7a2.9 2.9 0 0 0 5.3-1.6c0-1.4-.9-2.3-1.7-3.2-.6-.7-1.1-1.4-1.2-2.7-1.5 1.3-2.3 2.6-2.3 3.9 0 .5.1.9.3 1.3-.5-.3-.9-.8-1-1.5-.7.7-1 1.4-1 2.2 0 .6.2 1.2.6 1.6Z" />
-              </svg>
-              Trending
-            </button>
-            <button class="tab-button" id="search-tab" type="button" data-tab="search">
-              <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m16.2 16.2 4.3 4.3" />
-              </svg>
-              Search
-            </button>
-          </nav>
-          <section id="results-region" class="results-region" aria-label="Prediction market matches"></section>
-          <footer class="privacy-footer">
-            <span class="footer-shield" aria-hidden="true"></span>
-            <span>Read only <span class="footer-dot">&bull;</span> Matched locally <span class="footer-dot">&bull;</span> No data leaves device</span>
-            <button class="footer-info" id="privacy-info-button" type="button" title="Privacy details" aria-label="Privacy details">i</button>
-          </footer>
-        </main>
-        <script>${render}</script>
-      </body>
-    </html>`;
+  const popup = fs.readFileSync(path.join(ROOT, "src/popup/popup.html"), "utf8");
+  return popup
+    .replace('<link rel="stylesheet" href="./popup.css">', `<style>${css}</style>`)
+    .replace(/\s*<script src="[^"]+"><\/script>/g, "")
+    .replace("</body>", () => `<script>${render}</script></body>`);
 }
 
 async function renderFixture(page) {
@@ -130,110 +51,180 @@ async function renderFixture(page) {
     const results = document.getElementById("results-region");
     renderer.renderStatus(status, "complete", "Local scan complete", "4 related events found");
     renderer.renderArticleContext(results, {
-      title: "Bitcoin preps 3% May downside, but US PMI data may boost BTC price",
-      topic: { label: "crypto" },
-      entities: { top: [{ text: "Bitcoin" }, { text: "US PMI" }] },
-      keywords: [{ text: "bitcoin" }, { text: "pmi data" }]
+      title: "US and Iran negotiations continue after permanent peace deal talks",
+      cleanText: "Iran negotiations, diplomacy, ceasefire talks, and a permanent peace deal are the central market angle.",
+      topic: { label: "politics" },
+      entities: { top: [{ text: "Iran" }, { text: "United States" }] },
+      keywords: [{ text: "iran negotiations" }, { text: "peace deal" }]
     });
-    renderer.renderResults(results, [
+    const candidates = [
       {
-        id: "bitcoin-may-31",
-        eventId: "bitcoin-may-event",
-        eventTitle: "Bitcoin above __ on May 31?",
-        title: "Bitcoin above __ on May 31?",
-        url: "https://polymarket.com/event/bitcoin-above-on-may-31",
+        id: "iran-peace-deal",
+        eventId: "iran-peace-deal-event",
+        eventTitle: "US x Iran permanent peace deal by...?",
+        title: "US x Iran permanent peace deal by...?",
+        question: "Will the US and Iran reach a permanent peace deal in 2026?",
+        url: "https://polymarket.com/event/us-x-iran-permanent-peace-deal-by",
         image: fixtureImages[0],
-        primaryOutcome: "Yes",
-        secondaryOutcome: "No",
-        primaryPrice: 0.71,
-        secondaryPrice: 0.29,
-        primaryPercent: 71,
-        outcomeOptions: [
-          { label: "Yes", price: 0.71, percent: 71 },
-          { label: "No", price: 0.29, percent: 29 }
-        ],
-        category: "Price",
-        endDate: "2025-05-31T23:59:00Z",
-        movement: { direction: "up", value: 0.03 },
+        category: "Politics",
+        endDate: "2026-12-31T23:59:00Z",
         confidence: 92,
         traderCount: 12600,
-        volume: 2400000
+        volume: 261000000,
+        markets: [
+          {
+            title: "US x Iran permanent peace deal by June 15?",
+            endDate: "2026-06-15T23:59:00Z",
+            outcomeOptions: [{ label: "Yes", price: 0.08, percent: 8 }],
+            movement: { direction: "down", value: 0.02 }
+          },
+          {
+            title: "US x Iran permanent peace deal by June 30?",
+            endDate: "2026-06-30T23:59:00Z",
+            outcomeOptions: [{ label: "Yes", price: 0.18, percent: 18 }],
+            movement: { direction: "up", value: 0.03 }
+          },
+          {
+            title: "US x Iran permanent peace deal by July 31?",
+            endDate: "2026-07-31T23:59:00Z",
+            outcomeOptions: [{ label: "Yes", price: 0.29, percent: 29 }],
+            movement: { direction: "down", value: 0.21 }
+          },
+          {
+            title: "US x Iran permanent peace deal by August 31?",
+            endDate: "2026-08-31T23:59:00Z",
+            outcomeOptions: [{ label: "Yes", price: 0.43, percent: 43 }],
+            movement: { direction: "up", value: 0.02 }
+          },
+          {
+            title: "US x Iran permanent peace deal by December 31?",
+            endDate: "2026-12-31T23:59:00Z",
+            outcomeOptions: [{ label: "Yes", price: 0.68, percent: 68 }],
+            movement: { direction: "up", value: 0.04 }
+          }
+        ]
       },
       {
-        id: "us-pmi-may",
-        eventId: "pmi-may-event",
-        eventTitle: "US PMI (May) above 50?",
-        title: "US PMI (May) above 50?",
-        url: "https://polymarket.com/event/us-pmi-may-above-50",
+        id: "brent-crude-july",
+        eventId: "brent-crude-event",
+        eventTitle: "Brent crude above $95 by Jul 31?",
+        title: "Brent crude above $95 by Jul 31?",
+        url: "https://app.hyperliquid.xyz/trade/BRENT",
         image: fixtureImages[1],
         primaryOutcome: "Yes",
         secondaryOutcome: "No",
-        primaryPrice: 0.64,
-        secondaryPrice: 0.36,
-        primaryPercent: 64,
+        primaryPrice: 0.41,
+        secondaryPrice: 0.59,
+        primaryPercent: 41,
         outcomeOptions: [
-          { label: "Yes", price: 0.64, percent: 64 },
-          { label: "No", price: 0.36, percent: 36 }
+          { label: "Yes", price: 0.41, percent: 41 },
+          { label: "No", price: 0.59, percent: 59 }
         ],
-        category: "Macro",
-        endDate: "2025-05-31T23:59:00Z",
-        movement: { direction: "flat", value: 0 },
+        category: "Energy",
+        marketSource: "Hyperliquid",
+        endDate: "2026-07-31T23:59:00Z",
+        movement: { direction: "up", value: 0.05 },
         confidence: 78,
         traderCount: 8700,
         volume: 1800000
       },
       {
-        id: "bitcoin-price-may",
-        eventId: "bitcoin-price-may-event",
-        eventTitle: "Bitcoin price on May 31?",
-        title: "Bitcoin price on May 31?",
-        url: "https://polymarket.com/event/bitcoin-price-on-may-31",
+        id: "china-taiwan-2027",
+        eventId: "china-taiwan-event",
+        eventTitle: "China invades Taiwan before 2027?",
+        title: "China invades Taiwan before 2027?",
+        url: "https://polymarket.com/event/china-invades-taiwan-before-2027",
         image: fixtureImages[2],
         primaryOutcome: "Yes",
         secondaryOutcome: "No",
-        primaryPrice: 0.58,
-        secondaryPrice: 0.42,
-        primaryPercent: 58,
+        primaryPrice: 0.12,
+        secondaryPrice: 0.88,
+        primaryPercent: 12,
         outcomeOptions: [
-          { label: "Yes", price: 0.58, percent: 58 },
-          { label: "No", price: 0.42, percent: 42 }
+          { label: "Yes", price: 0.12, percent: 12 },
+          { label: "No", price: 0.88, percent: 88 }
         ],
-        category: "Price",
-        endDate: "2025-05-31T23:59:00Z",
-        movement: { direction: "flat", value: 0 },
+        category: "Geopolitics",
+        endDate: "2026-12-31T23:59:00Z",
+        movement: { direction: "down", value: 0.01 },
         confidence: 71,
         traderCount: 9300,
         volume: 1200000
       },
       {
-        id: "fed-cuts-june",
-        eventId: "fed-cuts-event",
-        eventTitle: "Will Fed cut rates by June 18?",
-        title: "Will Fed cut rates by June 18?",
-        url: "https://polymarket.com/event/fed-cuts-rates-by-june-2025",
+        id: "hormuz-traffic",
+        eventId: "hormuz-traffic-event",
+        eventTitle: "Strait of Hormuz traffic normal by end of June?",
+        title: "Strait of Hormuz traffic normal by end of June?",
+        url: "https://polymarket.com/event/strait-of-hormuz-traffic-normal-by-end-of-june",
         image: fixtureImages[3],
         primaryOutcome: "Yes",
         secondaryOutcome: "No",
-        primaryPrice: 0.43,
-        secondaryPrice: 0.57,
-        primaryPercent: 43,
+        primaryPrice: 0.32,
+        secondaryPrice: 0.68,
+        primaryPercent: 32,
         outcomeOptions: [
-          { label: "Yes", price: 0.43, percent: 43 },
-          { label: "No", price: 0.57, percent: 57 }
+          { label: "Yes", price: 0.32, percent: 32 },
+          { label: "No", price: 0.68, percent: 68 }
         ],
-        category: "Rates",
-        endDate: "2025-06-18T23:59:00Z",
-        movement: { direction: "flat", value: 0 },
+        category: "Energy",
+        endDate: "2026-06-30T23:59:00Z",
+        movement: { direction: "up", value: 0.02 },
         confidence: 56,
         traderCount: 6100,
         volume: 892000
       }
-    ], {
+    ];
+    window.__LAYOUT_CANDIDATES = candidates;
+    renderer.renderResults(results, candidates, {
       title: "Related markets",
       detail: "Best match",
       showMatchLimitNote: false
     });
   }, FIXTURE_IMAGES);
+}
+
+async function renderTradeFixture(page) {
+  await page.evaluate(() => {
+    const shell = document.querySelector(".popup-shell");
+    const results = document.getElementById("results-region");
+    if (shell) {
+      shell.classList.add("is-trade-view");
+    }
+    window.PMRender.renderTradeView(results, window.__LAYOUT_CANDIDATES[0]);
+  });
+}
+
+async function inspectTradeLayout(page) {
+  return page.evaluate(() => {
+    const shell = document.querySelector(".popup-shell");
+    const view = document.querySelector(".trade-view");
+    const book = document.querySelector(".trade-order-book");
+    const buy = document.querySelector(".trade-buy-button");
+    const chart = document.querySelector(".trade-chart-card");
+    const shellRect = shell ? shell.getBoundingClientRect() : null;
+    const viewRect = view ? view.getBoundingClientRect() : null;
+    const bookRect = book ? book.getBoundingClientRect() : null;
+    const buyRect = buy ? buy.getBoundingClientRect() : null;
+    const chartRect = chart ? chart.getBoundingClientRect() : null;
+    return {
+      bodyText: document.body.textContent.replace(/\s+/g, " ").trim(),
+      documentWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+      shellRect: shellRect ? shellRect.toJSON() : null,
+      viewRect: viewRect ? viewRect.toJSON() : null,
+      chartRect: chartRect ? chartRect.toJSON() : null,
+      buyRect: buyRect ? buyRect.toJSON() : null,
+      bookRect: bookRect ? bookRect.toJSON() : null,
+      tradeViewCount: document.querySelectorAll(".trade-view").length,
+      activeRange: document.querySelector(".trade-range-button.is-active")?.textContent.trim() || "",
+      tradeTitle: document.querySelector(".trade-hero h2")?.textContent.trim() || "",
+      tradeMeta: document.querySelector(".trade-meta")?.textContent.replace(/\s+/g, " ").trim() || "",
+      buyText: buy?.textContent.trim() || "",
+      estimateText: document.querySelector(".trade-estimate")?.textContent.trim() || "",
+      orderBookRows: document.querySelectorAll(".trade-book-row").length,
+      sourceBadgeCount: document.querySelectorAll(".trade-view .source-badge").length
+    };
+  });
 }
 
 async function inspectLayout(page) {
@@ -242,6 +233,9 @@ async function inspectLayout(page) {
     const documentWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
     const overflowingElements = [...document.querySelectorAll("body *")]
       .filter((node) => {
+        if (node.closest(".status-region, .utility-control")) {
+          return false;
+        }
         const rect = node.getBoundingClientRect();
         return rect.right > viewportWidth + 1 || rect.left < -1;
       })
@@ -269,17 +263,159 @@ async function inspectLayout(page) {
       searchPlaceholder: document.querySelector("#market-search-input")?.getAttribute("placeholder") || "",
       activeTabText: document.querySelector(".tab-button.is-active")?.textContent.trim() || "",
       privacyText: document.querySelector(".privacy-footer")?.textContent.replace(/\s+/g, " ").trim() || "",
+      menuOpen: document.querySelector(".popup-shell")?.classList.contains("is-menu-open") || false,
+      menuExpanded: document.querySelector("#menu-button")?.getAttribute("aria-expanded") || "",
+      sourceBadgeCount: document.querySelectorAll(".source-badge").length,
+      sourcePolymarketCount: document.querySelectorAll(".source-badge.source-polymarket").length,
+      sourceHyperliquidCount: document.querySelectorAll(".source-badge.source-hyperliquid").length,
+      scenarioLabels: [...document.querySelectorAll(".scenario-label")].map((node) => node.textContent.trim()),
+      scenarioValues: [...document.querySelectorAll(".scenario-value")].map((node) => node.textContent.trim()),
+      venueLinks: [...document.querySelectorAll("a.market-card")].map((card) => ({
+        href: card.dataset.marketUrl || card.href,
+        source: card.dataset.marketSource || ""
+      })),
+      expandedTopBeforeRows: (() => {
+        const top = document.querySelector(".market-card-expanded .market-expanded-top");
+        const firstRow = document.querySelector(".market-card-expanded .market-scenario-row");
+        if (!top || !firstRow) {
+          return false;
+        }
+        return top.getBoundingClientRect().bottom <= firstRow.getBoundingClientRect().top + 1;
+      })(),
+      expandedSourceLabelRowOverlap: (() => {
+        const label = document.querySelector(".market-card-expanded .source-label");
+        const firstRow = document.querySelector(".market-card-expanded .market-scenario-row");
+        if (!label || !firstRow) {
+          return false;
+        }
+        const labelRect = label.getBoundingClientRect();
+        return [...firstRow.querySelectorAll(".scenario-dot, .scenario-label, .scenario-value-wrap")].some((node) => {
+          const nodeRect = node.getBoundingClientRect();
+          return labelRect.left < nodeRect.right &&
+            labelRect.right > nodeRect.left &&
+            labelRect.top < nodeRect.bottom &&
+            labelRect.bottom > nodeRect.top;
+        });
+      })(),
+      leadTitleClipped: (() => {
+        const title = document.querySelector(".market-card-expanded .event-parent-title");
+        if (!title) {
+          return true;
+        }
+        return title.scrollWidth > title.clientWidth + 1 || title.scrollHeight > title.clientHeight + 4;
+      })(),
+      leadTitleMenuOverlap: (() => {
+        const title = document.querySelector(".market-card-expanded .event-parent-title");
+        const menu = document.querySelector(".action-menu");
+        if (!title || !menu) {
+          return true;
+        }
+        const titleRect = title.getBoundingClientRect();
+        const menuRect = menu.getBoundingClientRect();
+        return titleRect.right > menuRect.left - 4 &&
+          titleRect.left < menuRect.right &&
+          titleRect.top < menuRect.bottom &&
+          titleRect.bottom > menuRect.top;
+      })(),
+      topicMenuOverlap: (() => {
+        const topic = document.querySelector(".detected-topic-pill");
+        const menu = document.querySelector(".action-menu");
+        if (!topic || !menu) {
+          return true;
+        }
+        const topicRect = topic.getBoundingClientRect();
+        const menuRect = menu.getBoundingClientRect();
+        return topicRect.left < menuRect.right &&
+          topicRect.right > menuRect.left &&
+          topicRect.top < menuRect.bottom &&
+          topicRect.bottom > menuRect.top;
+      })(),
+      smallMenuClearsLeadCard: (() => {
+        if (viewportWidth > 430) {
+          return true;
+        }
+        const menu = document.querySelector(".action-menu");
+        const card = document.querySelector(".market-card");
+        if (!menu || !card) {
+          return false;
+        }
+        const menuRect = menu.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        return menuRect.bottom <= cardRect.top + 6;
+      })(),
+      actionMenuRect: document.querySelector(".action-menu")?.getBoundingClientRect().toJSON(),
+      actionMenuTextClipped: [...document.querySelectorAll(".action-menu-item span")].some((node) => node.scrollWidth > node.clientWidth + 1),
+      tradeToggleRect: document.querySelector(".trade-toggle")?.getBoundingClientRect().toJSON(),
+      menuButtonRect: document.querySelector(".menu-button")?.getBoundingClientRect().toJSON(),
+      heroTitleRect: document.querySelector(".hero-region h1")?.getBoundingClientRect().toJSON(),
+      topicPillRect: document.querySelector(".detected-topic-pill")?.getBoundingClientRect().toJSON(),
+      leadTitleRect: document.querySelector(".market-card-expanded .event-parent-title")?.getBoundingClientRect().toJSON(),
+      leadCardRect: document.querySelector(".market-card-expanded")?.getBoundingClientRect().toJSON(),
+      leadImageRect: document.querySelector(".market-card-expanded .market-image, .market-card-expanded .market-image-fallback")?.getBoundingClientRect().toJSON(),
       shellRect: document.querySelector(".popup-shell")?.getBoundingClientRect().toJSON(),
       resultsRect: document.querySelector("#results-region")?.getBoundingClientRect().toJSON(),
       footerRect: document.querySelector(".privacy-footer")?.getBoundingClientRect().toJSON(),
+      visualRadii: (() => {
+        const readRadius = (selector) => {
+          const node = document.querySelector(selector);
+          if (!node) {
+            return null;
+          }
+          const value = getComputedStyle(node).borderTopLeftRadius;
+          return Number.parseFloat(value);
+        };
+        return {
+          shell: readRadius(".popup-shell"),
+          leadCard: readRadius(".market-card-expanded"),
+          compactCard: readRadius(".market-card:not(.market-card-expanded)"),
+          actionMenu: readRadius(".action-menu")
+        };
+      })(),
+      firstCardVisible: (() => {
+        const card = document.querySelector(".market-card");
+        const results = document.querySelector("#results-region");
+        const footer = document.querySelector(".privacy-footer");
+        if (!card || !results || !footer) {
+          return false;
+        }
+        const rect = card.getBoundingClientRect();
+        const resultsRect = results.getBoundingClientRect();
+        const footerRect = footer.getBoundingClientRect();
+        return rect.bottom > resultsRect.top + 80 && rect.top < footerRect.top - 80;
+      })(),
       visibleCardCount: [...document.querySelectorAll(".market-card")]
         .filter((card) => {
           const rect = card.getBoundingClientRect();
           const results = document.querySelector("#results-region").getBoundingClientRect();
           return rect.top >= results.top - 1 && rect.bottom <= results.bottom + 1;
         }).length,
+      visibleCompactCardCount: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
+        .filter((card) => {
+          const rect = card.getBoundingClientRect();
+          const footer = document.querySelector(".privacy-footer").getBoundingClientRect();
+          return rect.top < footer.top - 40 && rect.bottom <= footer.top + 1;
+        }).length,
+      visibleCompactCardSources: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
+        .filter((card) => {
+          const rect = card.getBoundingClientRect();
+          const footer = document.querySelector(".privacy-footer").getBoundingClientRect();
+          return rect.top < footer.top - 40 && rect.bottom <= footer.top + 1;
+        })
+        .map((card) => ({
+          source: card.dataset.marketSource || "",
+          title: card.querySelector(".market-title, .event-parent-title")?.textContent.trim() || "",
+          href: card.dataset.marketUrl || card.href
+        })),
+      partialCompactAboveFooterCount: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
+        .filter((card) => {
+          const rect = card.getBoundingClientRect();
+          const footer = document.querySelector(".privacy-footer").getBoundingClientRect();
+          return rect.top < footer.top && rect.bottom > footer.top + 1;
+        }).length,
+      compactCardRects: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
+        .map((card) => card.getBoundingClientRect().toJSON()),
       statusText: document.querySelector("#status-region").innerText,
-      bodyText: document.body.innerText.slice(0, 500)
+      bodyText: document.body.innerText.slice(0, 900)
     };
   });
 }
@@ -309,13 +445,29 @@ async function main() {
         }
       });
       await page.setContent(pageHtml(), { waitUntil: "domcontentloaded" });
+      if (viewport.name === "popup") {
+        await page.evaluate(() => {
+          document.documentElement.dataset.viewMode = "expanded";
+        });
+      }
       await renderFixture(page);
       const screenshot = artifactPath(`popup-layout-${viewport.name}`, "png");
       await page.screenshot({ path: screenshot, fullPage: true });
       const layout = await inspectLayout(page);
+      let tradeView = null;
+      if (viewport.name === "popup") {
+        await renderTradeFixture(page);
+        const tradeScreenshot = artifactPath("popup-layout-trade", "png");
+        await page.screenshot({ path: tradeScreenshot, fullPage: true });
+        tradeView = {
+          screenshot: tradeScreenshot,
+          ...await inspectTradeLayout(page)
+        };
+      }
       report.viewports.push({
         ...viewport,
         screenshot,
+        tradeView,
         ...layout
       });
       await page.close();
@@ -335,8 +487,25 @@ async function main() {
       if (layout.cardCount !== 4) {
         throw new Error(`${viewport.name} layout rendered ${layout.cardCount} parent cards instead of 4.`);
       }
-      if (viewport.name === "popup" && layout.shellRect.height < 700) {
-        throw new Error(`${viewport.name} layout shell was too short for the target popup surface: ${layout.shellRect.height}`);
+      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 812 || layout.shellRect.height > 816)) {
+        throw new Error(`${viewport.name} layout shell height drifted from the reference aspect target: ${layout.shellRect && layout.shellRect.height}`);
+      }
+      if (viewport.name === "popup") {
+        if (!tradeView || tradeView.tradeViewCount !== 1 || !/Will the US and Iran reach a permanent peace deal in 2026/.test(tradeView.tradeTitle)) {
+          throw new Error(`${viewport.name} trade view did not render the target Iran market: ${JSON.stringify(tradeView)}`);
+        }
+        if (!/\$261M Vol/.test(tradeView.tradeMeta) || !/Ends Dec 31, 2026/.test(tradeView.tradeMeta)) {
+          throw new Error(`${viewport.name} trade view meta drifted from the target market: ${JSON.stringify(tradeView)}`);
+        }
+        if (tradeView.activeRange !== "1M" || !/^Buy\s+Yes/.test(tradeView.buyText) || !/Est\. shares:/.test(tradeView.estimateText) || tradeView.orderBookRows < 10 || tradeView.sourceBadgeCount !== 1) {
+          throw new Error(`${viewport.name} trade view controls were incomplete: ${JSON.stringify(tradeView)}`);
+        }
+        if (!/Yes 32¢/.test(tradeView.bodyText) || !/No 68¢/.test(tradeView.bodyText) || /No 1¢/.test(tradeView.bodyText)) {
+          throw new Error(`${viewport.name} trade view rendered incorrect Yes/No prices: ${JSON.stringify(tradeView)}`);
+        }
+        if (!tradeView.shellRect || !tradeView.bookRect || !tradeView.buyRect || tradeView.bookRect.top > tradeView.shellRect.bottom - 90 || tradeView.buyRect.bottom > tradeView.shellRect.bottom + 1) {
+          throw new Error(`${viewport.name} trade view pushed the order book out of the first screen: ${JSON.stringify(tradeView)}`);
+        }
       }
       if (layout.articlePreviewCount !== 0) {
         throw new Error(`${viewport.name} layout repeated article preview content.`);
@@ -353,11 +522,135 @@ async function main() {
       if (layout.activeTabText !== "Related") {
         throw new Error(`${viewport.name} layout active tab was ${layout.activeTabText} instead of Related.`);
       }
-      if (viewport.name === "compact" && layout.visibleCardCount < 2) {
-        throw new Error(`${viewport.name} layout only showed ${layout.visibleCardCount} full market card(s) above the footer.`);
+      if (!layout.menuOpen || layout.menuExpanded !== "true") {
+        throw new Error(`${viewport.name} layout did not render the target open menu state.`);
       }
-      if (!/Read only\s+.\s+Matched locally\s+.\s+No data leaves device/.test(layout.privacyText)) {
-        throw new Error(`${viewport.name} layout missing target privacy footer copy: ${layout.privacyText}`);
+      if (!layout.expandedTopBeforeRows) {
+        throw new Error(`${viewport.name} expanded card header overlapped its scenario rows.`);
+      }
+      if (layout.expandedSourceLabelRowOverlap) {
+        throw new Error(`${viewport.name} expanded source label overlapped the first scenario row.`);
+      }
+      if (layout.leadTitleClipped) {
+        throw new Error(`${viewport.name} expanded lead title was visually clipped.`);
+      }
+      if (layout.leadTitleMenuOverlap) {
+        throw new Error(`${viewport.name} expanded lead title overlapped the open action menu: ${JSON.stringify({ title: layout.leadTitleRect, menu: layout.actionMenuRect })}`);
+      }
+      if (layout.topicMenuOverlap) {
+        throw new Error(`${viewport.name} detected-topic pill overlapped the open action menu.`);
+      }
+      if (!layout.smallMenuClearsLeadCard) {
+        throw new Error(`${viewport.name} open action menu overlapped the lead card on a small viewport.`);
+      }
+      if (
+        layout.sourceBadgeCount !== layout.cardCount ||
+        layout.sourcePolymarketCount < 1 ||
+        layout.sourceHyperliquidCount < 1 ||
+        !layout.venueLinks.some((link) => link.source === "Hyperliquid" && /hyperliquid\.xyz/.test(link.href))
+      ) {
+        throw new Error(`${viewport.name} layout missing required venue badges or Hyperliquid link: ${JSON.stringify(layout.venueLinks)}`);
+      }
+      if (
+        !/Detected topic:\s*Iran negotiations/.test(layout.bodyText) ||
+        !/US x Iran permanent peace deal by/.test(layout.bodyText) ||
+        !/Brent crude above \$95 by Jul 31/.test(layout.bodyText) ||
+        !/China invades Taiwan before 2027/.test(layout.bodyText) ||
+        !layout.scenarioLabels.includes("June 15") ||
+        !layout.scenarioLabels.includes("December 31") ||
+        !layout.scenarioValues.includes("8%") ||
+        !layout.scenarioValues.includes("68%")
+      ) {
+        throw new Error(`${viewport.name} layout drifted from the target Iran market composition: ${JSON.stringify({ text: layout.bodyText, labels: layout.scenarioLabels, values: layout.scenarioValues })}`);
+      }
+      if (viewport.name === "compact" && !layout.firstCardVisible) {
+        throw new Error(`${viewport.name} layout did not show enough of the lead market card above the footer.`);
+      }
+      if (viewport.name === "popup" && layout.visibleCompactCardCount < 2) {
+        throw new Error(`${viewport.name} layout did not show two compact cards above the footer: ${JSON.stringify({ visibleCompactCardCount: layout.visibleCompactCardCount, compactCardRects: layout.compactCardRects, footer: layout.footerRect })}`);
+      }
+      if (viewport.name === "popup" && !layout.visibleCompactCardSources.some((card) => card.source === "Hyperliquid" && /hyperliquid\.xyz/.test(card.href))) {
+        throw new Error(`${viewport.name} layout did not show a visible compact Hyperliquid card above the footer: ${JSON.stringify(layout.visibleCompactCardSources)}`);
+      }
+      if (viewport.name === "popup" && layout.partialCompactAboveFooterCount !== 0) {
+        throw new Error(`${viewport.name} layout showed a partial compact card above the footer: ${JSON.stringify(layout.compactCardRects)}`);
+      }
+      if (viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.width < 176 || layout.actionMenuRect.width > 180)) {
+        throw new Error(`${viewport.name} action menu was too narrow for the reference overlay: ${layout.actionMenuRect && layout.actionMenuRect.width}`);
+      }
+      if (layout.actionMenuTextClipped) {
+        throw new Error(`${viewport.name} action menu text was clipped.`);
+      }
+      if (
+        viewport.name === "popup" &&
+        (!layout.actionMenuRect ||
+          !layout.shellRect ||
+          layout.actionMenuRect.right < layout.shellRect.right + 8 ||
+          layout.actionMenuRect.right > viewport.width - 4)
+      ) {
+        throw new Error(`${viewport.name} action menu was not anchored to the reference-style right edge: ${JSON.stringify({ menu: layout.actionMenuRect, shell: layout.shellRect })}`);
+      }
+      if (viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.height < 156 || layout.actionMenuRect.height > 174)) {
+        throw new Error(`${viewport.name} action menu height drifted from the compact reference overlay: ${JSON.stringify(layout.actionMenuRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.tradeToggleRect || layout.tradeToggleRect.top < 38 || layout.tradeToggleRect.top > 48)) {
+        throw new Error(`${viewport.name} trade control vertical placement drifted from the reference header: ${JSON.stringify(layout.tradeToggleRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.tradeToggleRect || layout.tradeToggleRect.width < 108 || layout.tradeToggleRect.width > 120 || layout.tradeToggleRect.height < 40 || layout.tradeToggleRect.height > 44)) {
+        throw new Error(`${viewport.name} trade control width drifted from the reference header: ${JSON.stringify(layout.tradeToggleRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.top < 38 || layout.menuButtonRect.top > 48)) {
+        throw new Error(`${viewport.name} menu button vertical placement drifted from the reference header: ${JSON.stringify(layout.menuButtonRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.width < 40 || layout.menuButtonRect.width > 44 || layout.menuButtonRect.height < 40 || layout.menuButtonRect.height > 44)) {
+        throw new Error(`${viewport.name} menu button size drifted from the reference header: ${JSON.stringify(layout.menuButtonRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.top > 90 || layout.actionMenuRect.top < 84)) {
+        throw new Error(`${viewport.name} action menu vertical placement drifted from the reference overlay: ${JSON.stringify(layout.actionMenuRect)}`);
+      }
+      if (
+        viewport.name === "popup" &&
+        (!layout.topicPillRect ||
+          !layout.leadCardRect ||
+          layout.leadCardRect.top - layout.topicPillRect.bottom < 16 ||
+          layout.leadCardRect.top - layout.topicPillRect.bottom > 24)
+      ) {
+        throw new Error(`${viewport.name} topic-to-card spacing drifted from the reference rhythm: ${JSON.stringify({ topic: layout.topicPillRect, lead: layout.leadCardRect })}`);
+      }
+      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.left < 21 || layout.shellRect.left > 23 || layout.shellRect.width < 454 || layout.shellRect.width > 458)) {
+        throw new Error(`${viewport.name} expanded shell inset drifted from the reference image: ${JSON.stringify(layout.shellRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.heroTitleRect || layout.heroTitleRect.left < 45 || layout.heroTitleRect.left > 49)) {
+        throw new Error(`${viewport.name} hero content was too inset for the reference shell: ${JSON.stringify(layout.heroTitleRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.left < 34 || layout.leadCardRect.left > 36 || layout.leadCardRect.width < 430 || layout.leadCardRect.width > 434)) {
+        throw new Error(`${viewport.name} lead card did not use the reference-width shell rhythm: ${JSON.stringify(layout.leadCardRect)}`);
+      }
+      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.height < 372 || layout.leadCardRect.height > 388)) {
+        throw new Error(`${viewport.name} lead card height drifted from the shorter reference rhythm: ${layout.leadCardRect && layout.leadCardRect.height}`);
+      }
+      if (viewport.name === "popup" && (!layout.leadImageRect || layout.leadImageRect.left > 50 || layout.leadImageRect.width < 86 || layout.leadImageRect.height < 86)) {
+        throw new Error(`${viewport.name} lead market image was too small for the reference card: ${JSON.stringify(layout.leadImageRect)}`);
+      }
+      if (viewport.name === "popup" && layout.footerRect && layout.footerRect.height > 48) {
+        throw new Error(`${viewport.name} footer was taller than the reference-style compact status bar: ${layout.footerRect.height}`);
+      }
+      if (
+        viewport.name === "popup" &&
+        (!layout.visualRadii ||
+          layout.visualRadii.shell < 29 ||
+          layout.visualRadii.shell > 31 ||
+          layout.visualRadii.leadCard < 16 ||
+          layout.visualRadii.leadCard > 18 ||
+          layout.visualRadii.compactCard < 15 ||
+          layout.visualRadii.compactCard > 17 ||
+          layout.visualRadii.actionMenu < 15 ||
+          layout.visualRadii.actionMenu > 17)
+      ) {
+        throw new Error(`${viewport.name} reference-style radii drifted: ${JSON.stringify(layout.visualRadii)}`);
+      }
+      if (!/Insights by Rainbow\s+Updated just now/.test(layout.privacyText)) {
+        throw new Error(`${viewport.name} layout missing target Rainbow footer copy: ${layout.privacyText}`);
       }
       if (!/Local scan complete/.test(layout.statusText)) {
         throw new Error(`${viewport.name} layout missing target local scan copy: ${layout.statusText}`);

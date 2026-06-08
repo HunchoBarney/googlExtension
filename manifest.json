@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Polymarket Article Matcher",
-  "description": "Finds high-confidence Polymarket matches for the article you are reading after manual activation.",
+  "description": "Finds high-confidence market matches for the article you are reading after manual activation.",
   "version": "0.1.0",
   "action": {
-    "default_title": "Find Polymarket matches"
+    "default_title": "Find market matches"
   },
   "background": {
     "service_worker": "src/background/serviceWorker.js"
@@ -18,7 +18,7 @@
         "chromeos": "Ctrl+Shift+Y",
         "mac": "MacCtrl+Shift+P"
       },
-      "description": "Find Polymarket matches"
+      "description": "Find market matches"
     }
   },
   "permissions": [
@@ -27,6 +27,7 @@
   ],
   "host_permissions": [
     "https://gamma-api.polymarket.com/*",
-    "https://data-api.polymarket.com/*"
+    "https://data-api.polymarket.com/*",
+    "https://api.hyperliquid.xyz/*"
   ]
 }

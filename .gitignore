@@ -3,4 +3,5 @@ node_modules/
 coverage/
 dist/
 test-artifacts/
+.lazyweb/
 *.log

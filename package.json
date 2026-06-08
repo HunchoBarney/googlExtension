@@ -7,7 +7,7 @@
     "test:polymarket:live": "node scripts/live-polymarket-smoke.js",
     "test:articles:live": "node scripts/live-article-qa.js --limit=8",
     "test:layout": "node scripts/popup-layout-smoke.js",
-    "test:browser": "node scripts/browser-smoke.js",
+    "test:browser": "node scripts/browser-smoke.js && node scripts/browser-smoke.js --verify-interactions --verify-expanded --skip-clicks",
     "test:visual": "node scripts/compare-popup-reference.js",
     "test:live": "npm run test:polymarket:live && npm run test:articles:live",
     "test:release": "npm test && npm run test:layout && npm run test:live && npm run test:browser"

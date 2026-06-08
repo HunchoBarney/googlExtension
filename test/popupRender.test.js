@@ -65,12 +65,19 @@ test("renders parent event cards with API image, option percentages, movement, a
 
   const card = results.querySelector(".market-card");
   assert.equal(card.tagName, "A");
-  assert.equal(card.getAttribute("href"), "https://polymarket.com/event/bitcoin-targets");
+  assert.match(card.getAttribute("href"), /^#trade-/);
+  assert.equal(card.dataset.marketUrl, "https://polymarket.com/event/bitcoin-targets");
   assert.equal(results.querySelector(".market-image").getAttribute("src"), image);
   assert.equal(results.querySelector(".market-image-fallback"), null);
   assert.match(card.textContent, /44%/);
   assert.match(card.textContent, /56%/);
-  assert.ok(card.querySelector(".probability-track"));
+  assert.equal(card.querySelector(".probability-track"), null);
+  assert.ok(card.classList.contains("market-card-expanded"));
+  assert.equal(card.querySelectorAll(".market-scenario-row").length, 2);
+  assert.match(card.textContent, /Polymarket/);
+  assert.equal(card.dataset.marketSource, "Polymarket");
+  assert.equal(card.querySelector(".source-badge").getAttribute("aria-label"), "Polymarket");
+  assert.ok(card.querySelector(".source-polymarket .source-mark"));
   assert.equal(card.querySelector(".market-meta-row"), null);
   assert.doesNotMatch(card.textContent, /traders/);
   assert.doesNotMatch(card.textContent, /volume/);
@@ -82,6 +89,72 @@ test("renders parent event cards with API image, option percentages, movement, a
   assert.doesNotMatch(card.textContent, /Politics/);
   assert.doesNotMatch(card.textContent, /Iran/);
   assert.doesNotMatch(card.textContent, /Open/);
+});
+
+test("renders compact secondary cards with source badges, quotes, and chevrons", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderResults(results, [
+    makeBinaryCandidate({ id: "first", eventId: "first", title: "First market" }),
+    makeBinaryCandidate({
+      id: "hyperliquid-market",
+      eventId: "second",
+      title: "Brent crude above $95 by Jul 31?",
+      url: "https://app.hyperliquid.xyz/trade/BRENT",
+      primaryPrice: 0.41,
+      secondaryPrice: 0.59,
+      displayValue: "$95.12",
+      displayDetail: "$28.4M 24h volume",
+      marketSource: "Hyperliquid",
+      movement: makeMovement("up", 0.05)
+    })
+  ]);
+
+  const cards = results.querySelectorAll(".market-card");
+  assert.equal(cards.length, 2);
+  assert.ok(cards[0].classList.contains("market-card-expanded"));
+  assert.equal(cards[1].classList.contains("market-card-expanded"), false);
+  assert.match(cards[1].textContent, /Brent crude above/);
+  assert.match(cards[1].textContent, /\$95\.12/);
+  assert.doesNotMatch(cards[1].textContent, /41%/);
+  assert.match(cards[1].textContent, /Hyperliquid/);
+  assert.equal(cards[1].dataset.marketSource, "Hyperliquid");
+  assert.match(cards[1].getAttribute("href"), /^#trade-/);
+  assert.equal(cards[1].dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
+  assert.equal(cards[1].querySelector(".source-badge").getAttribute("aria-label"), "Hyperliquid");
+  assert.ok(cards[1].querySelector(".source-hyperliquid .source-mark"));
+  assert.ok(cards[1].querySelector(".market-quote"));
+  assert.ok(cards[1].querySelector(".market-chevron"));
+});
+
+test("renders a Hyperliquid-only expanded card with venue price rows", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderResults(results, [makeBinaryCandidate({
+    id: "hyperliquid-btc",
+    eventId: "hyperliquid-btc",
+    title: "BTC perpetual market",
+    url: "https://app.hyperliquid.xyz/trade/BTC",
+    primaryPrice: null,
+    secondaryPrice: null,
+    primaryPercent: null,
+    outcomeOptions: [],
+    displayValue: "$105,001",
+    displayDetail: "$123.5M 24h volume",
+    primaryOutcome: "Mark",
+    marketSource: "Hyperliquid",
+    movement: makeMovement("up", 0.05)
+  })]);
+
+  const card = results.querySelector(".market-card");
+  assert.ok(card.classList.contains("market-card-expanded"));
+  assert.equal(card.dataset.marketSource, "Hyperliquid");
+  assert.match(card.textContent, /BTC perpetual market/);
+  assert.match(card.textContent, /Mark/);
+  assert.match(card.textContent, /\$105,001/);
+  assert.match(card.textContent, /24h volume/);
+  assert.match(card.textContent, /\$123\.5M/);
+  assert.doesNotMatch(card.textContent, /n\/a/i);
 });
 
 test("falls back to local icon when an API market image is unavailable", () => {
@@ -163,9 +236,129 @@ test("renders one clickable parent event card and hides child markets", () => {
   assert.equal(results.querySelectorAll(".event-group").length, 0);
   assert.equal(results.querySelectorAll(".event-child-cards .market-card").length, 0);
   assert.equal(results.querySelector(".event-parent-title").textContent, "Fed rate decisions");
-  assert.equal(cards[0].getAttribute("href"), "https://polymarket.com/event/fed-rate-decisions");
-  assert.match(results.textContent, /Related markets/);
-  assert.doesNotMatch(results.textContent, /Will the Fed hold rates/);
+  assert.match(cards[0].getAttribute("href"), /^#trade-/);
+  assert.equal(cards[0].dataset.marketUrl, "https://polymarket.com/event/fed-rate-decisions");
+  assert.ok(cards[0].classList.contains("market-card-expanded"));
+  assert.equal(cards[0].querySelectorAll(".market-scenario-row").length, 2);
+  assert.match(cards[0].textContent, /Will the Fed hold rates/);
+});
+
+test("renders an internal trade view with chart, order ticket, and order book", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderTradeView(results, makeBinaryCandidate({
+    id: "iran-peace",
+    title: "Will the US and Iran reach a permanent peace deal in 2026?",
+    url: "https://polymarket.com/event/us-iran-peace-deal",
+    image: "https://polymarket.example/iran.png",
+    volume: 261000000,
+    endDate: "2026-12-31T00:00:00.000Z",
+    primaryPrice: 0.32,
+    secondaryPrice: 0.68,
+    primaryPercent: 32,
+    movement: makeMovement("up", 0.02)
+  }));
+
+  const view = results.querySelector(".trade-view");
+  assert.ok(view);
+  assert.equal(view.dataset.marketUrl, "https://polymarket.com/event/us-iran-peace-deal");
+  assert.match(view.textContent, /Will the US and Iran reach a permanent peace deal in 2026/);
+  assert.match(view.textContent, /\$261M Vol/);
+  assert.match(view.textContent, /Ends Dec 30, 2026|Ends Dec 31, 2026/);
+  assert.ok(view.querySelector("[data-trade-back]"));
+  assert.ok(view.querySelector("[data-trade-menu]"));
+  assert.equal(view.querySelector("[data-trade-menu]").getAttribute("aria-expanded"), "false");
+  assert.equal(view.querySelectorAll("[data-trade-action]").length, 2);
+  assert.equal(view.querySelector("[data-trade-actions]").hidden, true);
+  assert.ok(view.querySelector(".trade-chart-svg .trade-chart-line"));
+  assert.equal(view.querySelector(".trade-chart-price").textContent, "$0.3200");
+  assert.equal(view.querySelector(".trade-range-button.is-active").dataset.tradeRange, "1M");
+  assert.ok(view.querySelector("[data-trade-range='1Y']").dataset.chartPath);
+  assert.notEqual(
+    view.querySelector("[data-trade-range='1Y']").dataset.chartPath,
+    view.querySelector("[data-trade-range='1M']").dataset.chartPath
+  );
+  assert.match(view.textContent, /Yes\s+32/);
+  assert.match(view.textContent, /No\s+68/);
+  assert.equal(view.querySelector(".trade-buy-button").textContent, "Buy Yes");
+  assert.match(view.querySelector(".trade-estimate").textContent, /312\.5/);
+  assert.equal(view.querySelectorAll(".trade-book-bid .trade-book-row").length, 5);
+  assert.equal(view.querySelectorAll(".trade-book-ask .trade-book-row").length, 5);
+});
+
+test("trade view prefers the actual market question over grouped event copy", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderTradeView(results, makeBinaryCandidate({
+    id: "iran-peace",
+    eventTitle: "US x Iran permanent peace deal by...?",
+    title: "US x Iran permanent peace deal by...?",
+    question: "Will the US and Iran reach a permanent peace deal in 2026?",
+    url: "https://polymarket.com/event/us-iran-peace-deal"
+  }));
+
+  const heading = results.querySelector(".trade-hero h2");
+  assert.equal(heading.textContent, "Will the US and Iran reach a permanent peace deal in 2026?");
+});
+
+test("trade view infers the opposite side when a grouped market omits secondary pricing", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderTradeView(results, makeBinaryCandidate({
+    id: "grouped-peace",
+    title: "US x Iran permanent peace deal by...?",
+    url: "https://polymarket.com/event/us-iran-peace",
+    primaryPrice: 0.32,
+    secondaryPrice: null,
+    secondaryOutcome: "No",
+    secondaryPercent: null
+  }));
+
+  const text = results.querySelector(".trade-ticket").textContent;
+  assert.match(text, /Yes\s+32/);
+  assert.match(text, /No\s+68/);
+  assert.doesNotMatch(text, /No\s+1/);
+});
+
+test("trade view uses Hyperliquid mark prices instead of fake binary fallbacks", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderTradeView(results, {
+    id: "hyperliquid:BRENT",
+    eventId: "hyperliquid:BRENT",
+    title: "BRENT perpetual market",
+    eventTitle: "BRENT perpetual market",
+    url: "https://app.hyperliquid.xyz/trade/BRENT",
+    displayValue: "$95.12",
+    displayDetail: "$28.4M 24h volume",
+    primaryOutcome: "Mark",
+    secondaryOutcome: "24h",
+    primaryPrice: null,
+    secondaryPrice: null,
+    primaryPercent: null,
+    outcomeOptions: [],
+    marketSource: "Hyperliquid",
+    sourceLabel: "Hyperliquid",
+    source: "hyperliquid",
+    raw: {
+      context: {
+        markPx: "95.12"
+      }
+    }
+  });
+
+  const view = results.querySelector(".trade-view");
+  const ticketText = view.querySelector(".trade-ticket").textContent;
+  assert.equal(view.dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
+  assert.equal(view.querySelector(".trade-chart-price").textContent, "$95.12");
+  assert.match(ticketText, /Long\s+\$95\.12/);
+  assert.match(ticketText, /Short\s+\$95\.12/);
+  assert.equal(view.querySelector(".trade-buy-button").textContent, "Buy Long");
+  assert.match(view.querySelector(".trade-estimate").textContent, /Est\. contracts:/);
+  assert.doesNotMatch(ticketText, /Yes\s+32/);
+  assert.doesNotMatch(ticketText, /No\s+68/);
+  assert.match(view.querySelector(".trade-book-bid .trade-book-row").textContent, /\$95\./);
+  assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /31¢/);
 });
 
 test("renders option-agnostic labels for team and multi-option markets", () => {
