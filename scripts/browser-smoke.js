@@ -445,9 +445,13 @@ async function capturePopupScreenshot(root, sessionId, prefix) {
   return path.relative(path.join(__dirname, ".."), file);
 }
 
-async function clickFirstPopupCard(root, sessionId) {
+async function clickFirstPopupCard(root, sessionId, source = "Polymarket", options = {}) {
+  const sourceSelector = source
+    ? `a.market-card[data-market-source="${source.replace(/"/g, "\\\"")}"]`
+    : "";
+  const fallbackSelector = options.allowFallback === false ? "null" : "document.querySelector(\"a.market-card\")";
   const card = await evaluatePopup(root, sessionId, `(() => {
-    const node = document.querySelector('a.market-card[data-market-source="Polymarket"]') || document.querySelector("a.market-card");
+    const node = ${sourceSelector ? `document.querySelector(${JSON.stringify(sourceSelector)}) ||` : ""} ${fallbackSelector};
     if (!node) {
       return null;
     }
@@ -461,7 +465,7 @@ async function clickFirstPopupCard(root, sessionId) {
   })()`);
 
   if (!card || !card.href) {
-    throw new Error("The popup did not render a clickable market card.");
+    throw new Error(`The popup did not render a clickable ${source || "venue"} market card.`);
   }
 
   await sendToTarget(root, sessionId, "Input.dispatchMouseEvent", {
@@ -1448,6 +1452,47 @@ async function runActionPopupSmoke({
         method: "popup-card-click",
         ...report.clickedLinkCheck
       });
+
+      if (!hyperliquidTrade && report.cardLinks.some((href) => /hyperliquid\.xyz/i.test(href))) {
+        const hyperliquidHref = await clickFirstPopupCard(root, popupSessionId, "Hyperliquid", { allowFallback: false });
+        const hyperliquidState = await waitForPopupCondition(
+          root,
+          popupSessionId,
+          (state) => state.visual.tradeViewCount === 1 &&
+            state.visual.tradeMarketSource === "Hyperliquid" &&
+            /^Buy\s+Long/.test(state.visual.tradeBuyText) &&
+            /Est\. contracts:/.test(state.visual.tradeEstimateText),
+          "Hyperliquid card click trade view"
+        );
+        await clickPopupSelector(root, popupSessionId, "[data-trade-side='no']");
+        const hyperliquidSideState = await waitForPopupCondition(
+          root,
+          popupSessionId,
+          (state) => state.visual.tradeActiveSide === "no" &&
+            /^Buy\s+Short/.test(state.visual.tradeBuyText) &&
+            !/Buy\s+No/.test(state.visual.tradeBuyText),
+          "Hyperliquid trade side update"
+        );
+        await clickPopupSelector(root, popupSessionId, "[data-trade-back]");
+        await waitForPopupCondition(
+          root,
+          popupSessionId,
+          (state) => state.visual.tradeViewCount === 0 &&
+            state.cardLinks.length > 0,
+          "Hyperliquid trade back to market list"
+        );
+        report.hyperliquidTradeCheck = {
+          href: hyperliquidHref,
+          title: hyperliquidState.visual.tradeViewTitle,
+          buyButton: hyperliquidState.visual.tradeBuyText,
+          sideBuyButton: hyperliquidSideState.visual.tradeBuyText,
+          estimate: hyperliquidState.visual.tradeEstimateText
+        };
+        report.openedLinkChecks.push({
+          method: "hyperliquid-card-click",
+          ...report.hyperliquidTradeCheck
+        });
+      }
     }
 
     for (const href of skipClicks ? [] : report.cardLinks.slice(1, 3)) {

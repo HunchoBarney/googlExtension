@@ -358,7 +358,46 @@ test("trade view uses Hyperliquid mark prices instead of fake binary fallbacks",
   assert.doesNotMatch(ticketText, /Yes\s+32/);
   assert.doesNotMatch(ticketText, /No\s+68/);
   assert.match(view.querySelector(".trade-book-bid .trade-book-row").textContent, /\$95\./);
-  assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /31¢/);
+  assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /31\u00a2/);
+});
+
+test("trade view ignores stale binary outcome fields for Hyperliquid markets", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderTradeView(results, {
+    id: "hyperliquid:BRENT",
+    eventId: "hyperliquid:BRENT",
+    title: "BRENT perpetual market",
+    eventTitle: "BRENT perpetual market",
+    url: "https://app.hyperliquid.xyz/trade/BRENT",
+    displayValue: "$95.12",
+    primaryOutcome: "Yes",
+    secondaryOutcome: "No",
+    primaryPrice: 0.41,
+    secondaryPrice: 0.59,
+    primaryPercent: 41,
+    outcomeOptions: [
+      { label: "Yes", price: 0.41, percent: 41 },
+      { label: "No", price: 0.59, percent: 59 }
+    ],
+    marketSource: "Hyperliquid",
+    sourceLabel: "Hyperliquid",
+    source: "hyperliquid",
+    raw: {
+      context: {
+        markPx: "95.12"
+      }
+    }
+  });
+
+  const view = results.querySelector(".trade-view");
+  const ticketText = view.querySelector(".trade-ticket").textContent;
+  assert.match(ticketText, /Long\s+\$95\.12/);
+  assert.match(ticketText, /Short\s+\$95\.12/);
+  assert.doesNotMatch(ticketText, /Yes\s+41/);
+  assert.doesNotMatch(ticketText, /No\s+59/);
+  assert.equal(view.querySelector(".trade-chart-price").textContent, "$95.12");
+  assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /\d+\u00a2/);
 });
 
 test("trade view does not invent binary prices for Hyperliquid markets without a mark", () => {
@@ -394,7 +433,7 @@ test("trade view does not invent binary prices for Hyperliquid markets without a
   assert.doesNotMatch(ticketText, /Yes\s+1/);
   assert.doesNotMatch(ticketText, /No\s+99/);
   assert.match(view.querySelector(".trade-order-book").textContent, /n\/a/);
-  assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /\d+¢/);
+  assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /\d+\u00a2/);
 });
 
 test("renders option-agnostic labels for team and multi-option markets", () => {

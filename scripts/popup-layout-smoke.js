@@ -111,22 +111,29 @@ async function renderFixture(page) {
         title: "Brent crude above $95 by Jul 31?",
         url: "https://app.hyperliquid.xyz/trade/BRENT",
         image: fixtureImages[1],
-        primaryOutcome: "Yes",
-        secondaryOutcome: "No",
-        primaryPrice: 0.41,
-        secondaryPrice: 0.59,
-        primaryPercent: 41,
-        outcomeOptions: [
-          { label: "Yes", price: 0.41, percent: 41 },
-          { label: "No", price: 0.59, percent: 59 }
-        ],
+        displayValue: "$95.12",
+        displayDetail: "$28M 24h volume",
+        markPrice: 95.12,
+        primaryOutcome: "Mark",
+        secondaryOutcome: "24h",
+        primaryPrice: null,
+        secondaryPrice: null,
+        primaryPercent: null,
+        outcomeOptions: [],
         category: "Energy",
         marketSource: "Hyperliquid",
+        sourceLabel: "Hyperliquid",
+        source: "hyperliquid",
         endDate: "2026-07-31T23:59:00Z",
         movement: { direction: "up", value: 0.05 },
         confidence: 78,
         traderCount: 8700,
-        volume: 1800000
+        volume: 1800000,
+        raw: {
+          context: {
+            markPx: "95.12"
+          }
+        }
       },
       {
         id: "china-taiwan-2027",

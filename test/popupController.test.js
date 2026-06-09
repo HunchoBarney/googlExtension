@@ -116,6 +116,18 @@ function setupPopup({ extractResult, searchResult, searchError, hyperliquidResul
             <button data-trade-action="open-venue" type="button">Open venue</button>
             <button data-trade-action="info" type="button">Information</button>
           </div>
+          <div class="trade-side-row">
+            <button class="trade-side-button trade-side-yes is-active" data-trade-side="yes" data-trade-label="Yes" data-trade-price="0.32" data-trade-unit="shares" aria-pressed="true" type="button">Yes 32c</button>
+            <button class="trade-side-button trade-side-no" data-trade-side="no" data-trade-label="No" data-trade-price="0.68" data-trade-unit="shares" aria-pressed="false" type="button">No 68c</button>
+          </div>
+          <label>
+            <input data-trade-amount="true" value="$100">
+            <button data-trade-max="true" type="button">MAX</button>
+          </label>
+          <button class="trade-buy-button" data-trade-buy="true" type="button">Buy Yes</button>
+          <div class="trade-estimate" data-trade-estimate="true">Est. shares: 312.5</div>
+          <div data-trade-book-side="bid"><div class="trade-book-row"><span>31c</span><span>1</span><span>1</span></div></div>
+          <div data-trade-book-side="ask"><div class="trade-book-row"><span>33c</span><span>1</span><span>1</span></div></div>
         </section>`;
     },
     renderEmpty(_root, title, detail, options) {
@@ -399,6 +411,50 @@ test("trade action menu opens Hyperliquid venue links unchanged", async () => {
 
   assert.deepEqual(calls.openedTabs, [{ url: "https://app.hyperliquid.xyz/trade/BTC" }]);
   assert.equal(calls.statuses.at(-1).title, "Opening venue");
+});
+
+test("trade ticket controls update side, amount, and preview detail", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "btc",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    url: "https://polymarket.com/event/bitcoin"
+  });
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate] });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
+
+  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  document.querySelector("[data-trade-side='no']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  assert.equal(document.querySelector("[data-trade-side='no']").classList.contains("is-active"), true);
+  assert.equal(document.querySelector("[data-trade-side='yes']").getAttribute("aria-pressed"), "false");
+  assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy No");
+  assert.match(document.querySelector("[data-trade-estimate]").textContent, /Est\. shares: 147\.1/);
+
+  document.querySelector("[data-trade-max]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  assert.equal(document.querySelector("[data-trade-amount]").value, "$1,000");
+  assert.match(document.querySelector("[data-trade-estimate]").textContent, /Est\. shares: 1,471/);
+
+  document.querySelector("[data-trade-buy]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  assert.equal(calls.statuses.at(-1).title, "Trade preview");
+  assert.match(calls.statuses.at(-1).detail, /No - \$1,000 - Est\. shares: 1,471/);
+  assert.match(document.querySelector("#surface-message").textContent, /No - \$1,000 - Est\. shares: 1,471/);
 });
 
 test("popup fills sparse related results with maybe-related groups", async () => {

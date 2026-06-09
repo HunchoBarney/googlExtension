@@ -641,6 +641,18 @@
       : `Est. ${unit}: 0`;
   }
 
+  function currentTradePreviewDetail() {
+    const activeSide = resultsRegion.querySelector(".trade-side-button.is-active");
+    const input = resultsRegion.querySelector("[data-trade-amount]");
+    const estimate = resultsRegion.querySelector("[data-trade-estimate]");
+    const label = activeSide
+      ? activeSide.dataset.tradeLabel || activeSide.textContent.trim().split(/\s+/)[0] || "Market"
+      : "Market";
+    const amount = input && input.value ? input.value : "$0";
+    const estimateText = estimate ? estimate.textContent.trim() : "";
+    return [label, amount, estimateText].filter(Boolean).join(" - ");
+  }
+
   function formatTradeBookPrice(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -1187,8 +1199,9 @@
     const buyButton = event.target.closest("[data-trade-buy]");
     if (buyButton) {
       event.preventDefault();
-      showSurfaceMessage("Trade preview", "Connect on the venue to place the live order.", { timeoutMs: 3000 });
-      renderStatus("complete", "Trade preview", "Order details calculated locally.");
+      const detail = currentTradePreviewDetail();
+      showSurfaceMessage("Trade preview", `${detail}. Connect on the venue to place the live order.`, { timeoutMs: 3000 });
+      renderStatus("complete", "Trade preview", detail || "Order details calculated locally.");
       return;
     }
 

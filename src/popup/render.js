@@ -728,7 +728,7 @@
       percent: candidate.primaryPercent
     };
     const markPrice = displayPriceNumber(candidate);
-    if (sourceName(candidate) === "Hyperliquid" && !hasOutcomePrice(primary) && !hasOutcomePrice(outcomes[1])) {
+    if (sourceName(candidate) === "Hyperliquid") {
       const displayValue = markPrice === null ? "n/a" : formatAssetPrice(markPrice);
       const price = markPrice === null ? null : markPrice;
       return [
