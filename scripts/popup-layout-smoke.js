@@ -191,15 +191,15 @@ async function renderFixture(page) {
   }, FIXTURE_IMAGES);
 }
 
-async function renderTradeFixture(page) {
-  await page.evaluate(() => {
+async function renderTradeFixture(page, candidateIndex = 0) {
+  await page.evaluate((index) => {
     const shell = document.querySelector(".popup-shell");
     const results = document.getElementById("results-region");
     if (shell) {
       shell.classList.add("is-trade-view");
     }
-    window.PMRender.renderTradeView(results, window.__LAYOUT_CANDIDATES[0]);
-  });
+    window.PMRender.renderTradeView(results, window.__LAYOUT_CANDIDATES[index]);
+  }, candidateIndex);
 }
 
 async function inspectTradeLayout(page) {
@@ -211,6 +211,9 @@ async function inspectTradeLayout(page) {
     const ticket = document.querySelector(".trade-ticket");
     const buy = document.querySelector(".trade-buy-button");
     const chart = document.querySelector(".trade-chart-card");
+    const sourceBadge = document.querySelector(".trade-view .source-badge");
+    const sourceMark = document.querySelector(".trade-image-wrap .source-mark");
+    const sourceMarkStyle = sourceMark ? getComputedStyle(sourceMark) : null;
     const shellRect = shell ? shell.getBoundingClientRect() : null;
     const viewRect = view ? view.getBoundingClientRect() : null;
     const bookRect = book ? book.getBoundingClientRect() : null;
@@ -238,6 +241,8 @@ async function inspectTradeLayout(page) {
       tradeTitleFontSize: tradeTitle ? Number.parseFloat(getComputedStyle(tradeTitle).fontSize) : 0,
       tradeTitleRect: titleRect ? titleRect.toJSON() : null,
       tradeMeta: document.querySelector(".trade-meta")?.textContent.replace(/\s+/g, " ").trim() || "",
+      sourceLabel: sourceBadge?.getAttribute("aria-label") || "",
+      sourceMarkBackground: sourceMarkStyle ? `${sourceMarkStyle.backgroundImage} ${sourceMarkStyle.backgroundColor}` : "",
       tradeActionLabels: [...document.querySelectorAll("[data-trade-action]")].map((node) => node.textContent.trim()),
       buyText: buy?.textContent.trim() || "",
       estimateText: document.querySelector(".trade-estimate")?.textContent.trim() || "",
@@ -476,6 +481,7 @@ async function main() {
       await page.screenshot({ path: screenshot, fullPage: true });
       const layout = await inspectLayout(page);
       let tradeView = null;
+      let hyperliquidTradeView = null;
       if (viewport.name === "popup") {
         await renderTradeFixture(page);
         const tradeScreenshot = artifactPath("popup-layout-trade", "png");
@@ -484,11 +490,19 @@ async function main() {
           screenshot: tradeScreenshot,
           ...await inspectTradeLayout(page)
         };
+        await renderTradeFixture(page, 1);
+        const hyperliquidTradeScreenshot = artifactPath("popup-layout-trade-hyperliquid", "png");
+        await page.screenshot({ path: hyperliquidTradeScreenshot, fullPage: true });
+        hyperliquidTradeView = {
+          screenshot: hyperliquidTradeScreenshot,
+          ...await inspectTradeLayout(page)
+        };
       }
       report.viewports.push({
         ...viewport,
         screenshot,
         tradeView,
+        hyperliquidTradeView,
         ...layout
       });
       await page.close();
@@ -538,6 +552,15 @@ async function main() {
         }
         if (tradeView.tradeTitleFontSize < 21.5 || tradeView.tradeTitleFontSize > 22.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 45 || tradeView.tradeTitleRect.height > 54) {
           throw new Error(`${viewport.name} trade title font size drifted from the reference scale: ${tradeView.tradeTitleFontSize}`);
+        }
+        if (!hyperliquidTradeView || hyperliquidTradeView.sourceLabel !== "Hyperliquid" || !/^Buy\s+Long/.test(hyperliquidTradeView.buyText) || !/Est\. contracts:/.test(hyperliquidTradeView.estimateText)) {
+          throw new Error(`${viewport.name} Hyperliquid trade view controls were incomplete: ${JSON.stringify(hyperliquidTradeView)}`);
+        }
+        if (!/Long\s+\$95\.12/.test(hyperliquidTradeView.bodyText) || !/Short\s+\$95\.12/.test(hyperliquidTradeView.bodyText)) {
+          throw new Error(`${viewport.name} Hyperliquid trade view rendered incorrect Long/Short prices: ${JSON.stringify(hyperliquidTradeView)}`);
+        }
+        if (!/83,\s*224,\s*195|14,\s*108,\s*97/.test(hyperliquidTradeView.sourceMarkBackground)) {
+          throw new Error(`${viewport.name} Hyperliquid trade badge lost its venue color: ${hyperliquidTradeView.sourceMarkBackground}`);
         }
       }
       if (layout.articlePreviewCount !== 0) {

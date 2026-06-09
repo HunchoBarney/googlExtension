@@ -1009,6 +1009,10 @@ svg circle {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
 }
 
+.trade-image-wrap .source-hyperliquid .source-mark {
+  background: linear-gradient(145deg, #53e0c3, #0e6c61);
+}
+
 .trade-image-wrap .source-label {
   position: absolute;
   width: 1px;
