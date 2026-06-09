@@ -213,6 +213,13 @@ async function inspectTradeLayout(page) {
     const chart = document.querySelector(".trade-chart-card");
     const chartPrice = document.querySelector(".trade-chart-price");
     const chartMarkerDot = document.querySelector(".trade-chart-marker-dot");
+    const chartPath = document.querySelector(".trade-chart-line")?.getAttribute("d") || "";
+    const chartPathPoints = [];
+    for (const match of chartPath.matchAll(/[ML](-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)) {
+      chartPathPoints.push({ x: Number(match[1]), y: Number(match[2]) });
+    }
+    const chartStartPoint = chartPathPoints[0] || null;
+    const chartEndPoint = chartPathPoints[chartPathPoints.length - 1] || null;
     const sourceBadge = document.querySelector(".trade-view .source-badge");
     const sourceMark = document.querySelector(".trade-image-wrap .source-mark");
     const sourceMarkStyle = sourceMark ? getComputedStyle(sourceMark) : null;
@@ -238,6 +245,9 @@ async function inspectTradeLayout(page) {
       chartPriceRect: chartPriceRect ? chartPriceRect.toJSON() : null,
       chartMarkerCx: chartMarkerDot ? Number(chartMarkerDot.getAttribute("cx")) : null,
       chartMarkerCy: chartMarkerDot ? Number(chartMarkerDot.getAttribute("cy")) : null,
+      chartPathPointCount: chartPathPoints.length,
+      chartPathStartY: chartStartPoint ? chartStartPoint.y : null,
+      chartPathEndY: chartEndPoint ? chartEndPoint.y : null,
       ticketRect: ticketRect ? ticketRect.toJSON() : null,
       buyRect: buyRect ? buyRect.toJSON() : null,
       bookRect: bookRect ? bookRect.toJSON() : null,
@@ -564,8 +574,11 @@ async function main() {
         if (tradeView.tradeTitleFontSize < 21.5 || tradeView.tradeTitleFontSize > 22.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 45 || tradeView.tradeTitleRect.height > 54) {
           throw new Error(`${viewport.name} trade title font size drifted from the reference scale: ${tradeView.tradeTitleFontSize}`);
         }
-        if (!tradeView.chartRect || !tradeView.chartPriceRect || tradeView.chartPriceRect.top > tradeView.chartRect.top + 48 || tradeView.chartMarkerCx === null || tradeView.chartMarkerCx < 300 || tradeView.chartMarkerCx > 355 || tradeView.chartMarkerCy === null || tradeView.chartMarkerCy > 98) {
+        if (!tradeView.chartRect || !tradeView.chartPriceRect || tradeView.chartPriceRect.top > tradeView.chartRect.top + 48 || tradeView.chartMarkerCx === null || tradeView.chartMarkerCx < 285 || tradeView.chartMarkerCx > 325 || tradeView.chartMarkerCy === null || tradeView.chartMarkerCy > 98) {
           throw new Error(`${viewport.name} trade chart marker drifted from the reference peak placement: ${JSON.stringify({ chart: tradeView.chartRect, price: tradeView.chartPriceRect, markerCx: tradeView.chartMarkerCx, markerCy: tradeView.chartMarkerCy })}`);
+        }
+        if (tradeView.chartPathPointCount < 40 || tradeView.chartPathStartY === null || tradeView.chartPathEndY === null || tradeView.chartPathEndY - tradeView.chartMarkerCy < 44) {
+          throw new Error(`${viewport.name} trade chart lost the reference post-marker drop: ${JSON.stringify({ pointCount: tradeView.chartPathPointCount, startY: tradeView.chartPathStartY, endY: tradeView.chartPathEndY, markerCy: tradeView.chartMarkerCy })}`);
         }
         if (!hyperliquidTradeView || hyperliquidTradeView.sourceLabel !== "Hyperliquid" || !/^Buy\s+Long/.test(hyperliquidTradeView.buyText) || !/Est\. contracts:/.test(hyperliquidTradeView.estimateText)) {
           throw new Error(`${viewport.name} Hyperliquid trade view controls were incomplete: ${JSON.stringify(hyperliquidTradeView)}`);

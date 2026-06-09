@@ -977,15 +977,40 @@
     const height = 190;
     const config = chartRangeConfig(range);
     const seed = hashText(`${marketKey(candidate)}:${price}:${config.key}`);
+    const basis = clampNumber(price, 0.05, 0.95);
+    const priceOffset = (0.42 - basis) * 38 + config.drift * 0.16;
+    const rangeScale = config.key === "1D"
+      ? 0.5
+      : config.key === "1W"
+        ? 0.72
+        : config.key === "1Y"
+          ? 1.12
+          : config.key === "ALL"
+            ? 1.2
+            : 1;
+    const anchors = [
+      [0, 104],
+      [0.08, 90],
+      [0.18, 98],
+      [0.32, 142],
+      [0.44, 135],
+      [0.56, 116],
+      [0.66, 106],
+      [0.72, 66],
+      [0.8, 76],
+      [0.87, 68],
+      [0.93, 124],
+      [1, 136]
+    ];
     const points = [];
-    const base = height - clampNumber(price, 0.05, 0.95) * 122 - 32 + config.drift;
     for (let index = 0; index < 42; index += 1) {
       const x = (width / 41) * index;
-      const wave = Math.sin((index + (seed % 9)) / 4.2) * config.amplitude;
-      const counter = Math.cos((index + (seed % 13)) / 2.8) * Math.max(8, config.amplitude * 0.46);
-      const jag = (((seed >> (index % 16)) & 7) - 3) * 3.2;
-      const selectedPeak = -Math.exp(-Math.pow(index - 32, 2) / 8) * config.amplitude * 1.05;
-      const y = clampNumber(base + wave + counter + jag + selectedPeak, 28, height - 30);
+      const t = index / 41;
+      const referenceY = interpolateChartAnchors(anchors, t);
+      const ripple = Math.sin((index + (seed % 17)) / 2.1) * 3.5 +
+        Math.cos((index + (seed % 11)) / 3.4) * 2.2;
+      const jag = (((seed >> (index % 16)) & 3) - 1.5) * 1.6;
+      const y = clampNumber(referenceY + priceOffset + (ripple + jag) * rangeScale, 28, height - 30);
       points.push([x, y]);
     }
     return points;
@@ -999,9 +1024,22 @@
     }, "").trim();
   }
 
+  function interpolateChartAnchors(anchors, t) {
+    for (let index = 1; index < anchors.length; index += 1) {
+      const previous = anchors[index - 1];
+      const next = anchors[index];
+      if (t <= next[0]) {
+        const span = Math.max(0.001, next[0] - previous[0]);
+        const local = (t - previous[0]) / span;
+        return previous[1] + (next[1] - previous[1]) * local;
+      }
+    }
+    return anchors[anchors.length - 1][1];
+  }
+
   function chartMarker(candidate, price, range = "1M") {
     const points = chartPoints(candidate, price, range);
-    const focus = points.filter(([x]) => x >= 250 && x <= 345);
+    const focus = points.filter(([x]) => x >= 270 && x <= 325);
     const candidates = focus.length ? focus : points;
     const [x, y] = candidates.reduce((best, point) => point[1] < best[1] ? point : best, candidates[0] || [292, 84]);
     return { x, y };

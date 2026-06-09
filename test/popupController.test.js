@@ -809,6 +809,62 @@ test("real renderer Hyperliquid trade controls stay Long Short through the popup
   assert.match(document.querySelector("[data-trade-estimate]").textContent, /Est\. contracts:/);
 });
 
+test("real renderer compact Hyperliquid cards open the internal trade view", async () => {
+  const polymarketCandidate = makeBinaryCandidate({
+    id: "pm-iran-peace",
+    eventId: "pm-iran-peace",
+    title: "Will the US and Iran reach a permanent peace deal in 2026?",
+    eventTitle: "US x Iran permanent peace deal by...?",
+    confidence: 88,
+    url: "https://polymarket.com/event/us-iran-peace-deal",
+    primaryPrice: 0.32,
+    secondaryPrice: 0.68,
+    primaryPercent: 32
+  });
+  const hyperliquidCandidate = {
+    id: "hyperliquid:BRENT",
+    eventId: "hyperliquid:BRENT",
+    title: "Brent crude above $95 by Jul 31?",
+    eventTitle: "Brent crude above $95 by Jul 31?",
+    confidence: 82,
+    url: "https://app.hyperliquid.xyz/trade/BRENT",
+    displayValue: "$95.12",
+    markPrice: 95.12,
+    marketSource: "Hyperliquid",
+    sourceLabel: "Hyperliquid",
+    source: "hyperliquid",
+    raw: {
+      context: {
+        markPx: "95.12"
+      }
+    }
+  };
+  const { dom, calls, refreshButton } = setupPopup({
+    searchResult: [polymarketCandidate],
+    hyperliquidResult: [hyperliquidCandidate],
+    useRealRenderer: true
+  });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && document.querySelectorAll(".market-card").length === 2, "mixed venue cards");
+
+  const hyperliquidCard = document.querySelector('a.market-card[data-market-source="Hyperliquid"]');
+  assert.ok(hyperliquidCard);
+  assert.equal(hyperliquidCard.classList.contains("market-card-expanded"), false);
+
+  hyperliquidCard.dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  const tradeView = document.querySelector(".trade-view");
+  assert.ok(tradeView);
+  assert.equal(tradeView.dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
+  assert.equal(tradeView.querySelector(".source-badge").getAttribute("aria-label"), "Hyperliquid");
+  assert.equal(tradeView.querySelector("[data-trade-buy]").textContent, "Buy Long");
+  assert.equal(calls.openedTabs.length, 0);
+});
+
 test("popup fills sparse related results with maybe-related groups", async () => {
   const strongCandidate = makeBinaryCandidate({
     id: "btc-strong",
