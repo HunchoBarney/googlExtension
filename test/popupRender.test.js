@@ -268,7 +268,11 @@ test("renders an internal trade view with chart, order ticket, and order book", 
   assert.ok(view.querySelector("[data-trade-back]"));
   assert.ok(view.querySelector("[data-trade-menu]"));
   assert.equal(view.querySelector("[data-trade-menu]").getAttribute("aria-expanded"), "false");
-  assert.equal(view.querySelectorAll("[data-trade-action]").length, 2);
+  assert.equal(view.querySelectorAll("[data-trade-action]").length, 4);
+  assert.deepEqual(
+    Array.from(view.querySelectorAll("[data-trade-action]")).map((node) => node.textContent),
+    ["Settings", "Connect", "Open venue", "Information"]
+  );
   assert.equal(view.querySelector("[data-trade-actions]").hidden, true);
   assert.ok(view.querySelector(".trade-chart-svg .trade-chart-line"));
   assert.equal(view.querySelector(".trade-chart-price").textContent, "$0.3200");

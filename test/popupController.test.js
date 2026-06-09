@@ -32,7 +32,7 @@ function waitFor(condition, label) {
   });
 }
 
-function setupPopup({ extractResult, searchResult, searchError, hyperliquidResult, hyperliquidError, enrichGroups, url = "chrome-extension://extension-id/src/popup/popup.html" } = {}) {
+function setupPopup({ extractResult, searchResult, searchError, hyperliquidResult, hyperliquidError, enrichGroups, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
   const dom = new JSDOM(`<!doctype html><body>
     <main class="popup-shell is-menu-open">
     <div class="menu-wrap">
@@ -86,7 +86,36 @@ function setupPopup({ extractResult, searchResult, searchError, hyperliquidResul
     return String(candidate.id || candidate.eventId || candidate.url || candidate.title || "market").toLowerCase();
   }
 
-  const renderer = {
+  const realRenderer = useRealRenderer ? require("../src/popup/render") : null;
+  const renderer = useRealRenderer ? {
+    renderStatus(root, phase, title, detail) {
+      calls.statuses.push({ phase, title, detail });
+      realRenderer.renderStatus(root, phase, title, detail);
+    },
+    renderArticleContext(root, article) {
+      calls.articleContexts.push(article);
+      realRenderer.renderArticleContext(root, article);
+    },
+    renderResults(root, candidates, options) {
+      calls.results.push({ candidates, options });
+      realRenderer.renderResults(root, candidates, options);
+    },
+    renderTradeView(root, candidate) {
+      calls.tradeViews.push(candidate);
+      realRenderer.renderTradeView(root, candidate);
+    },
+    renderEmpty(root, title, detail, options) {
+      calls.empty.push({ title, detail, options });
+      realRenderer.renderEmpty(root, title, detail, options);
+    },
+    renderError(root, message, options) {
+      calls.errors.push(message);
+      realRenderer.renderError(root, message, options);
+    },
+    marketKey(candidate) {
+      return realRenderer.marketKey(candidate);
+    }
+  } : {
     renderStatus(_root, phase, title, detail) {
       calls.statuses.push({ phase, title, detail });
     },
@@ -113,6 +142,8 @@ function setupPopup({ extractResult, searchResult, searchError, hyperliquidResul
           <button data-trade-back="true" type="button">Back</button>
           <button data-trade-menu="true" type="button" aria-expanded="false">More</button>
           <div data-trade-actions hidden>
+            <button data-trade-action="settings" type="button">Settings</button>
+            <button data-trade-action="connect" type="button">Connect</button>
             <button data-trade-action="open-venue" type="button">Open venue</button>
             <button data-trade-action="info" type="button">Information</button>
           </div>
@@ -413,6 +444,52 @@ test("trade action menu opens Hyperliquid venue links unchanged", async () => {
   assert.equal(calls.statuses.at(-1).title, "Opening venue");
 });
 
+test("trade action menu settings and connect controls are functional", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "btc",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    url: "https://polymarket.com/event/bitcoin"
+  });
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate] });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
+
+  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  document.querySelector("[data-trade-menu]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  document.querySelector("[data-trade-action='settings']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  assert.equal(calls.statuses.at(-1).title, "Settings");
+  assert.match(document.querySelector("#surface-message").textContent, /Read-only matching is active/);
+  assert.equal(document.querySelector("[data-trade-actions]").hidden, true);
+
+  document.querySelector("[data-trade-menu]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  const initialArticleSearchCount = calls.articleSearches.length;
+  document.querySelector("[data-trade-action='connect']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  await waitFor(() => refreshButton.disabled === false && calls.articleSearches.length > initialArticleSearchCount, "trade connect refresh");
+
+  assert.equal(calls.results.length, 2);
+  assert.equal(document.querySelector(".trade-view"), null);
+  assert.equal(calls.statuses.at(-1).title, "Local scan complete");
+});
+
 test("trade ticket controls update side, amount, and preview detail", async () => {
   const candidate = makeBinaryCandidate({
     id: "btc",
@@ -455,6 +532,134 @@ test("trade ticket controls update side, amount, and preview detail", async () =
   assert.equal(calls.statuses.at(-1).title, "Trade preview");
   assert.match(calls.statuses.at(-1).detail, /No - \$1,000 - Est\. shares: 1,471/);
   assert.match(document.querySelector("#surface-message").textContent, /No - \$1,000 - Est\. shares: 1,471/);
+});
+
+test("real renderer trade controls work through the popup controller", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "iran-peace",
+    eventId: "iran-peace-event",
+    title: "Will the US and Iran reach a permanent peace deal in 2026?",
+    eventTitle: "US x Iran permanent peace deal by...?",
+    confidence: 88,
+    url: "https://polymarket.com/event/us-iran-peace-deal",
+    primaryPrice: 0.32,
+    secondaryPrice: 0.68,
+    primaryPercent: 32,
+    endDate: "2026-12-31T00:00:00.000Z",
+    volume: 261000000
+  });
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate], useRealRenderer: true });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "real renderer initial popup run");
+
+  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  assert.ok(document.querySelector(".trade-view"));
+  assert.equal(document.querySelector(".trade-view").dataset.marketUrl, "https://polymarket.com/event/us-iran-peace-deal");
+  assert.match(document.querySelector(".trade-hero h2").textContent, /permanent peace deal/);
+  assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy Yes");
+
+  const initialPath = document.querySelector(".trade-chart-line").getAttribute("d");
+  document.querySelector("[data-trade-range='1Y']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  assert.equal(document.querySelector(".trade-range-button.is-active").dataset.tradeRange, "1Y");
+  assert.notEqual(document.querySelector(".trade-chart-line").getAttribute("d"), initialPath);
+
+  document.querySelector("[data-trade-side='no']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy No");
+
+  document.querySelector("[data-trade-max]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  assert.equal(document.querySelector("[data-trade-amount]").value, "$1,000");
+
+  document.querySelector("[data-trade-buy]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  assert.match(document.querySelector("#surface-message").textContent, /No - \$1,000 - Est\. shares:/);
+
+  document.querySelector("[data-trade-menu]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  document.querySelector("[data-trade-action='info']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  assert.match(document.querySelector("#surface-message").textContent, /Prices and depth/);
+
+  document.querySelector("[data-trade-back]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  assert.equal(document.querySelector(".trade-view"), null);
+  assert.equal(document.querySelectorAll(".market-card").length, 1);
+});
+
+test("real renderer Hyperliquid trade controls stay Long Short through the popup controller", async () => {
+  const candidate = {
+    id: "hyperliquid:BRENT",
+    eventId: "hyperliquid:BRENT",
+    title: "BRENT perpetual market",
+    eventTitle: "BRENT perpetual market",
+    confidence: 82,
+    url: "https://app.hyperliquid.xyz/trade/BRENT",
+    displayValue: "$95.12",
+    markPrice: 95.12,
+    primaryOutcome: "Yes",
+    secondaryOutcome: "No",
+    primaryPrice: 0.41,
+    secondaryPrice: 0.59,
+    primaryPercent: 41,
+    outcomeOptions: [
+      { label: "Yes", price: 0.41, percent: 41 },
+      { label: "No", price: 0.59, percent: 59 }
+    ],
+    marketSource: "Hyperliquid",
+    sourceLabel: "Hyperliquid",
+    source: "hyperliquid",
+    raw: {
+      context: {
+        markPx: "95.12"
+      }
+    }
+  };
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate], useRealRenderer: true });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "real Hyperliquid initial popup run");
+
+  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  const ticketText = document.querySelector(".trade-ticket").textContent;
+  assert.equal(document.querySelector(".trade-view").dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
+  assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy Long");
+  assert.match(ticketText, /Long\s+\$95\.12/);
+  assert.match(ticketText, /Short\s+\$95\.12/);
+  assert.doesNotMatch(ticketText, /Yes|No|\u00a2/);
+  assert.doesNotMatch(document.querySelector(".trade-order-book").textContent, /\u00a2/);
+
+  document.querySelector("[data-trade-side='no']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy Short");
+  assert.match(document.querySelector("[data-trade-estimate]").textContent, /Est\. contracts:/);
 });
 
 test("popup fills sparse related results with maybe-related groups", async () => {
@@ -532,6 +737,35 @@ test("popup merges Hyperliquid related markets without Polymarket trader enrichm
   assert.equal(calls.results[0].candidates[0].traderCount, 123);
   assert.equal(calls.results[0].candidates[1].traderCount, undefined);
   assert.equal(calls.results[0].candidates[1].marketSource, "Hyperliquid");
+});
+
+test("popup does not render expired or closed markets even if a source returns them", async () => {
+  const expiredCandidate = makeBinaryCandidate({
+    id: "btc-expired",
+    title: "Bitcoin above $100k last month?",
+    active: true,
+    closed: false,
+    endDate: "2000-01-01T00:00:00.000Z",
+    url: "https://polymarket.com/event/bitcoin-expired"
+  });
+  const activeCandidate = makeBinaryCandidate({
+    id: "btc-active",
+    title: "Bitcoin above $150k next year?",
+    active: true,
+    closed: false,
+    endDate: "2999-01-01T00:00:00.000Z",
+    url: "https://polymarket.com/event/bitcoin-active"
+  });
+  const { dom, calls, refreshButton } = setupPopup({
+    searchResult: [expiredCandidate, activeCandidate]
+  });
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "closed market guard run");
+
+  assert.deepEqual(calls.results[0].candidates, [activeCandidate]);
+  assert.equal(calls.statuses.at(-1).detail, "1 related event found");
+  assert.doesNotMatch(dom.window.document.querySelector("#results-region").textContent, /last month/);
+  assert.match(dom.window.document.querySelector("#results-region").textContent, /next year/);
 });
 
 test("popup progressively reveals all related groups instead of capping at four", async () => {

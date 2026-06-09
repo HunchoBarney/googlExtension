@@ -1333,14 +1333,30 @@
     actionPopover.dataset.tradeActions = "true";
     actionPopover.hidden = true;
     for (const action of [
-      ["open-venue", "Open venue"],
-      ["info", "Information"]
+      ["settings", "Settings", [
+        "M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.3a2 2 0 0 1-4 0V21a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 0 1 4.1 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H2.7a2 2 0 0 1 0-4H3a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 0 1 7 4.1l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V2.7a2 2 0 0 1 4 0V3a1.7 1.7 0 0 0 1 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 0 1 19.9 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1A1.7 1.7 0 0 0 21 10h.3a2 2 0 0 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"
+      ]],
+      ["connect", "Connect", [
+        "M10.5 13.5 13.5 10",
+        "M8.1 16.9 6.7 18.3a4 4 0 0 1-5.7-5.7l3.4-3.4a4 4 0 0 1 5.7 0",
+        "M15.9 7.1 17.3 5.7a4 4 0 0 1 5.7 5.7l-3.4 3.4a4 4 0 0 1-5.7 0"
+      ]],
+      ["open-venue", "Open venue", [
+        "M14 3h7v7",
+        "M10 14 21 3",
+        "M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"
+      ]],
+      ["info", "Information", [
+        "M12 10v6",
+        "M12 7h.01",
+        "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"
+      ]]
     ]) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "trade-action-item";
       item.dataset.tradeAction = action[0];
-      item.textContent = action[1];
+      item.append(createInlineIcon("trade-action-icon", action[2]), document.createTextNode(action[1]));
       actionPopover.append(item);
     }
 

@@ -438,12 +438,82 @@
     }
   }
 
+  function booleanish(value) {
+    if (value === true || value === false) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true") {
+        return true;
+      }
+      if (normalized === "false") {
+        return false;
+      }
+    }
+    return null;
+  }
+
+  function groupEndDateValue(group = {}) {
+    const raw = group.raw || {};
+    const event = group.event || {};
+    return group.endDate || group.endDateIso || raw.endDate || raw.endDateIso || raw.endDateTime || event.endDate || event.endDateIso || event.endDateTime || "";
+  }
+
+  function hasPastEndDate(group = {}) {
+    const value = groupEndDateValue(group);
+    if (!value) {
+      return false;
+    }
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) && time < Date.now();
+  }
+
+  function hasClosedDisplayFlag(group = {}) {
+    const raw = group.raw || {};
+    const event = group.event || {};
+    for (const source of [group, raw, event]) {
+      if (!source) {
+        continue;
+      }
+      if (["closed", "archived", "resolved", "unavailable"].some((field) => booleanish(source[field]) === true)) {
+        return true;
+      }
+      if (booleanish(source.active) === false) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isDisplayableGroup(group = {}) {
+    return !hasClosedDisplayFlag(group) && !hasPastEndDate(group);
+  }
+
+  function filterDisplayableGroups(groups = []) {
+    return groups
+      .map((group) => {
+        const markets = Array.isArray(group.markets)
+          ? group.markets.filter(isDisplayableGroup)
+          : null;
+        if (markets && !markets.length) {
+          return null;
+        }
+        if (markets && markets.length !== group.markets.length) {
+          return { ...group, markets };
+        }
+        return group;
+      })
+      .filter((group) => group && (Array.isArray(group.markets) ? !hasClosedDisplayFlag(group) : isDisplayableGroup(group)));
+  }
+
   function renderGroups(groups, options = {}) {
     clearRelatedPagination();
     setTradeViewOpen(false);
-    latestRenderedGroups = groups.slice();
+    const displayableGroups = filterDisplayableGroups(groups);
+    latestRenderedGroups = displayableGroups.slice();
     latestRenderOptions = { ...options };
-    const sorted = sortedGroups(groups);
+    const sorted = sortedGroups(displayableGroups);
     const progressive = Boolean(options.progressive);
     const visibleCount = progressive
       ? Math.min(latestRelatedVisibleCount, sorted.length)
@@ -936,10 +1006,11 @@
       renderStatus("searching", "Searching markets", "Checking related events and markets.");
       const { candidates, resultGroups } = await searchRelatedGroups(enrichedArticle);
       const enrichedResultGroups = await enrichTraderCounts(resultGroups);
-      latestRelatedGroups = enrichedResultGroups;
-      exposeDebugContext(enrichedArticle, candidates, enrichedResultGroups);
+      const displayableResultGroups = filterDisplayableGroups(enrichedResultGroups);
+      latestRelatedGroups = displayableResultGroups;
+      exposeDebugContext(enrichedArticle, candidates, displayableResultGroups);
 
-      if (!enrichedResultGroups.length) {
+      if (!displayableResultGroups.length) {
         renderStatus("complete", "Local scan complete", "No related events found");
         renderer.renderEmpty(resultsRegion, "No strong market match was found.", "The article was readable, but the related markets were weak or unavailable.", {
           title: "Related markets"
@@ -947,8 +1018,8 @@
         return;
       }
 
-      renderStatus("complete", "Local scan complete", relatedDetail(enrichedResultGroups.length));
-      renderGroups(enrichedResultGroups, {
+      renderStatus("complete", "Local scan complete", relatedDetail(displayableResultGroups.length));
+      renderGroups(displayableResultGroups, {
         title: "Related markets",
         progressive: true
       });
@@ -999,7 +1070,7 @@
 
       const enrichedResultGroups = await enrichTraderCounts(resultGroups);
       const venue = await searchHyperliquidMarkets(normalized, MAX_RESULT_GROUPS);
-      const mergedResultGroups = mergeGroups(enrichedResultGroups, venue.resultGroups, MAX_RESULT_GROUPS + 2);
+      const mergedResultGroups = filterDisplayableGroups(mergeGroups(enrichedResultGroups, venue.resultGroups, MAX_RESULT_GROUPS + 2));
 
       if (!mergedResultGroups.length) {
         renderStatus("complete", "Search complete", "No markets found");
@@ -1047,7 +1118,7 @@
 
       const enrichedResultGroups = await enrichTraderCounts(resultGroups);
       const venue = await trendingHyperliquidGroups(MAX_RESULT_GROUPS);
-      const mergedResultGroups = mergeGroups(enrichedResultGroups, venue.resultGroups, MAX_RESULT_GROUPS + 2);
+      const mergedResultGroups = filterDisplayableGroups(mergeGroups(enrichedResultGroups, venue.resultGroups, MAX_RESULT_GROUPS + 2));
 
       if (!mergedResultGroups.length) {
         renderStatus("complete", "Trending loaded", "No markets found");
@@ -1158,6 +1229,16 @@
       const action = tradeAction.dataset.tradeAction;
       const url = resultsRegion.querySelector(".trade-view")?.dataset.marketUrl || "";
       setTradeActionsOpen(false);
+      if (action === "settings") {
+        showSurfaceMessage("Settings", "Read-only matching is active. Cards open the trading view.", { timeoutMs: 3000 });
+        renderStatus("complete", "Settings", "Read-only matching is active.");
+        return;
+      }
+      if (action === "connect") {
+        showSurfaceMessage("Connecting", "Refreshing matches from the active tab.", { timeoutMs: 3000 });
+        run();
+        return;
+      }
       if (action === "open-venue") {
         const opened = openExternalUrl(url);
         showSurfaceMessage(opened ? "Opening venue" : "Could not open venue", opened ? "The live market opened in a new tab." : "No valid market URL is available.", { timeoutMs: 3000 });
