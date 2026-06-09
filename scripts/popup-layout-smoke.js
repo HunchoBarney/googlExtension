@@ -384,6 +384,8 @@ async function inspectLayout(page) {
       leadTitleRect: document.querySelector(".market-card-expanded .event-parent-title")?.getBoundingClientRect().toJSON(),
       leadCardRect: document.querySelector(".market-card-expanded")?.getBoundingClientRect().toJSON(),
       leadImageRect: document.querySelector(".market-card-expanded .market-image, .market-card-expanded .market-image-fallback")?.getBoundingClientRect().toJSON(),
+      expandedCaretCount: document.querySelectorAll(".market-expanded-caret").length,
+      expandedCaretRect: document.querySelector(".market-expanded-caret")?.getBoundingClientRect().toJSON(),
       shellRect: document.querySelector(".popup-shell")?.getBoundingClientRect().toJSON(),
       resultsRect: document.querySelector("#results-region")?.getBoundingClientRect().toJSON(),
       footerRect: document.querySelector(".privacy-footer")?.getBoundingClientRect().toJSON(),
@@ -527,6 +529,9 @@ async function main() {
       }
       if (layout.cardCount !== 4) {
         throw new Error(`${viewport.name} layout rendered ${layout.cardCount} parent cards instead of 4.`);
+      }
+      if (layout.expandedCaretCount !== 1 || !layout.expandedCaretRect || !layout.leadCardRect || layout.expandedCaretRect.left < layout.leadCardRect.left || layout.expandedCaretRect.right > layout.leadCardRect.right || layout.expandedCaretRect.top < layout.leadCardRect.top + 80 || layout.expandedCaretRect.bottom > layout.leadCardRect.bottom - 120) {
+        throw new Error(`${viewport.name} layout missing the expanded-card caret in the target card area: ${JSON.stringify({ caretCount: layout.expandedCaretCount, caret: layout.expandedCaretRect, card: layout.leadCardRect })}`);
       }
       if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 812 || layout.shellRect.height > 816)) {
         throw new Error(`${viewport.name} layout shell height drifted from the reference aspect target: ${layout.shellRect && layout.shellRect.height}`);

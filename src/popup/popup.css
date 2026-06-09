@@ -602,6 +602,7 @@ svg circle {
 
 .market-card-expanded {
   display: grid;
+  position: relative;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   padding: 20px 12px 18px;
@@ -612,6 +613,18 @@ svg circle {
   box-shadow:
     0 22px 48px rgba(0, 0, 0, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.052);
+}
+
+.market-expanded-caret {
+  position: absolute;
+  top: 32%;
+  right: 24px;
+  width: 14px;
+  height: 14px;
+  border-top: 2.5px solid #a3a9b4;
+  border-left: 2.5px solid #a3a9b4;
+  pointer-events: none;
+  transform: rotate(45deg);
 }
 
 .market-expanded-top {

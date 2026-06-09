@@ -1374,7 +1374,11 @@
       rows.append(row);
     }
 
-    card.append(top, rows);
+    const caret = document.createElement("span");
+    caret.className = "market-expanded-caret";
+    caret.setAttribute("aria-hidden", "true");
+
+    card.append(top, caret, rows);
   }
 
   function appendCompactCardContents(card, candidate, titleText, options = {}) {
