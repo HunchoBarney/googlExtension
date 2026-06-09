@@ -145,7 +145,6 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
           <div data-trade-actions hidden>
             <button data-trade-action="settings" type="button">Settings</button>
             <button data-trade-action="connect" type="button">Connect</button>
-            <button data-trade-action="open-venue" type="button">Open venue</button>
             <button data-trade-action="info" type="button">Information</button>
           </div>
           <div class="trade-side-row">
@@ -389,7 +388,7 @@ test("clicking a rendered market opens the internal trade view", async () => {
   assert.equal(calls.statuses.at(-1).title, "Trade view");
 });
 
-test("trade action menu opens the matched venue in a new tab", async () => {
+test("trade action menu exposes the reference Settings Connect Information actions", async () => {
   const candidate = makeBinaryCandidate({
     id: "btc",
     title: "Will Bitcoin hit $150k?",
@@ -411,44 +410,12 @@ test("trade action menu opens the matched venue in a new tab", async () => {
   }));
   assert.equal(document.querySelector("[data-trade-actions]").hidden, false);
 
-  document.querySelector("[data-trade-action='open-venue']").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
-
-  assert.deepEqual(calls.openedTabs, [{ url: "https://polymarket.com/event/bitcoin" }]);
-  assert.equal(document.querySelector("[data-trade-actions]").hidden, true);
-  assert.equal(calls.statuses.at(-1).title, "Opening venue");
-});
-
-test("trade action menu opens Hyperliquid venue links unchanged", async () => {
-  const candidate = makeBinaryCandidate({
-    id: "hyperliquid-btc",
-    title: "BTC perpetual market",
-    confidence: 70,
-    marketSource: "Hyperliquid",
-    url: "https://app.hyperliquid.xyz/trade/BTC"
-  });
-  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate] });
-  const document = dom.window.document;
-
-  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
-
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
-  document.querySelector("[data-trade-menu]").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
-  document.querySelector("[data-trade-action='open-venue']").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
-
-  assert.deepEqual(calls.openedTabs, [{ url: "https://app.hyperliquid.xyz/trade/BTC" }]);
-  assert.equal(calls.statuses.at(-1).title, "Opening venue");
+  assert.deepEqual(
+    Array.from(document.querySelectorAll("[data-trade-action]")).map((node) => node.textContent),
+    ["Settings", "Connect", "Information"]
+  );
+  assert.equal(document.querySelector("[data-trade-action='open-venue']"), null);
+  assert.deepEqual(calls.openedTabs, []);
 });
 
 test("trade action menu settings and connect controls are functional", async () => {
@@ -686,6 +653,100 @@ test("real renderer hydrates Polymarket trade view with live CLOB data", async (
     cancelable: true
   }));
 
+  assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy No");
+  assert.deepEqual(
+    Array.from(document.querySelector(".trade-book-bid .trade-book-row").querySelectorAll("span")).map((node) => node.textContent),
+    ["66\u00a2", "789", "789"]
+  );
+});
+
+test("real renderer preserves trade interactions when live CLOB hydration finishes late", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "iran-peace",
+    eventId: "iran-peace-event",
+    title: "Will the US and Iran reach a permanent peace deal in 2026?",
+    confidence: 88,
+    url: "https://polymarket.com/event/us-iran-peace-deal",
+    primaryPrice: 0.32,
+    secondaryPrice: 0.68,
+    primaryPercent: 32,
+    outcomeOptions: [
+      { label: "Yes", price: 0.32, percent: 32, clobTokenId: "yes-token" },
+      { label: "No", price: 0.68, percent: 68, clobTokenId: "no-token" }
+    ]
+  });
+  const tradeDataResult = {
+    tradeDataSource: "clob",
+    tradeBooksByTokenId: {
+      "yes-token": {
+        bids: [{ price: 0.31, size: 123 }],
+        asks: [{ price: 0.33, size: 456 }]
+      },
+      "no-token": {
+        bids: [{ price: 0.66, size: 789 }],
+        asks: [{ price: 0.69, size: 987 }]
+      }
+    },
+    tradeChartHistoryByTokenId: {
+      "yes-token": {
+        "1M": [
+          { t: 1780000000, p: 0.3 },
+          { t: 1780086400, p: 0.32 }
+        ],
+        "1Y": [
+          { t: 1760000000, p: 0.2 },
+          { t: 1770000000, p: 0.46 },
+          { t: 1780086400, p: 0.32 }
+        ]
+      }
+    }
+  };
+  let resolveTradeData;
+  const tradeDataPromise = new Promise((resolve) => {
+    resolveTradeData = resolve;
+  });
+  const { dom, calls, refreshButton } = setupPopup({
+    searchResult: [candidate],
+    tradeDataResult: () => tradeDataPromise,
+    useRealRenderer: true
+  });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "delayed CLOB initial popup run");
+
+  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  await waitFor(() => calls.tradeDataRequests.length === 1 && document.querySelector(".trade-view"), "delayed CLOB trade view");
+
+  document.querySelector("[data-trade-range='1Y']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  document.querySelector("[data-trade-side='no']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  document.querySelector("[data-trade-max]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  document.querySelector("[data-trade-menu]").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+  assert.equal(document.querySelector("[data-trade-actions]").hidden, false);
+
+  resolveTradeData(tradeDataResult);
+
+  await waitFor(() => calls.tradeViews.length === 2 && calls.statuses.at(-1).detail === "Live depth loaded.", "delayed CLOB hydration");
+
+  assert.equal(document.querySelector(".trade-range-button.is-active").dataset.tradeRange, "1Y");
+  assert.equal(document.querySelector(".trade-side-button.is-active").dataset.tradeSide, "no");
+  assert.equal(document.querySelector("[data-trade-amount]").value, "$1,000");
+  assert.equal(document.querySelector("[data-trade-actions]").hidden, false);
   assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy No");
   assert.deepEqual(
     Array.from(document.querySelector(".trade-book-bid .trade-book-row").querySelectorAll("span")).map((node) => node.textContent),

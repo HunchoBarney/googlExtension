@@ -234,6 +234,7 @@ async function inspectTradeLayout(page) {
       activeRange: document.querySelector(".trade-range-button.is-active")?.textContent.trim() || "",
       tradeTitle: document.querySelector(".trade-hero h2")?.textContent.trim() || "",
       tradeMeta: document.querySelector(".trade-meta")?.textContent.replace(/\s+/g, " ").trim() || "",
+      tradeActionLabels: [...document.querySelectorAll("[data-trade-action]")].map((node) => node.textContent.trim()),
       buyText: buy?.textContent.trim() || "",
       estimateText: document.querySelector(".trade-estimate")?.textContent.trim() || "",
       orderBookRows: document.querySelectorAll(".trade-book-row").length,
@@ -527,6 +528,9 @@ async function main() {
         }
         if (tradeView.visibleOrderBookRows < 10) {
           throw new Error(`${viewport.name} trade view did not expose all first-screen order-book rows: ${JSON.stringify(tradeView)}`);
+        }
+        if (JSON.stringify(tradeView.tradeActionLabels) !== JSON.stringify(["Settings", "Connect", "Information"])) {
+          throw new Error(`${viewport.name} trade action menu labels drifted from the reference: ${JSON.stringify(tradeView.tradeActionLabels)}`);
         }
       }
       if (layout.articlePreviewCount !== 0) {

@@ -706,12 +706,49 @@
         ...candidate,
         ...tradeData
       };
+      const interactionState = currentTradeInteractionState();
       latestTradeCandidate = enriched;
       renderer.renderTradeView(resultsRegion, enriched);
+      restoreTradeInteractionState(interactionState);
       renderStatus("complete", "Trade view", tradeData.tradeDataSource === "clob" ? "Live depth loaded." : "Review market and order details.");
     } catch (error) {
       warnNonFatal("Polymarket trade data query failed; keeping preview trade data.", error);
     }
+  }
+
+  function currentTradeInteractionState() {
+    const activeRange = resultsRegion.querySelector(".trade-range-button.is-active");
+    const activeSide = resultsRegion.querySelector(".trade-side-button.is-active");
+    const amountInput = resultsRegion.querySelector("[data-trade-amount]");
+    return {
+      range: activeRange && activeRange.dataset ? activeRange.dataset.tradeRange || "" : "",
+      side: activeSide && activeSide.dataset ? activeSide.dataset.tradeSide || "" : "",
+      amount: amountInput ? amountInput.value : "",
+      actionsOpen: Boolean(resultsRegion.querySelector("[data-trade-actions]:not([hidden])"))
+    };
+  }
+
+  function restoreTradeInteractionState(state = {}) {
+    if (state.range) {
+      const rangeButton = resultsRegion.querySelector(`[data-trade-range='${state.range}']`);
+      if (rangeButton) {
+        selectTradeRange(rangeButton);
+      }
+    }
+    if (state.side) {
+      const sideButton = resultsRegion.querySelector(`[data-trade-side='${state.side}']`);
+      if (sideButton) {
+        selectTradeSide(sideButton);
+      }
+    }
+    if (state.amount) {
+      const amountInput = resultsRegion.querySelector("[data-trade-amount]");
+      if (amountInput) {
+        amountInput.value = state.amount;
+      }
+      updateTradeTicket();
+    }
+    setTradeActionsOpen(Boolean(state.actionsOpen));
   }
 
   function parseTradeAmount(value) {
@@ -915,21 +952,6 @@
     if (button) {
       button.setAttribute("aria-expanded", String(open));
     }
-  }
-
-  function openExternalUrl(url) {
-    if (!/^https?:\/\//i.test(url)) {
-      return false;
-    }
-    if (chrome.tabs && typeof chrome.tabs.create === "function") {
-      chrome.tabs.create({ url });
-      return true;
-    }
-    if (typeof global.open === "function") {
-      global.open(url, "_blank", "noreferrer");
-      return true;
-    }
-    return false;
   }
 
   function isHyperliquidGroup(group = {}) {
@@ -1271,7 +1293,6 @@
     if (tradeAction) {
       event.preventDefault();
       const action = tradeAction.dataset.tradeAction;
-      const url = resultsRegion.querySelector(".trade-view")?.dataset.marketUrl || "";
       setTradeActionsOpen(false);
       if (action === "settings") {
         showSurfaceMessage("Settings", "Read-only matching is active. Cards open the trading view.", { timeoutMs: 3000 });
@@ -1281,12 +1302,6 @@
       if (action === "connect") {
         showSurfaceMessage("Connecting", "Refreshing matches from the active tab.", { timeoutMs: 3000 });
         run();
-        return;
-      }
-      if (action === "open-venue") {
-        const opened = openExternalUrl(url);
-        showSurfaceMessage(opened ? "Opening venue" : "Could not open venue", opened ? "The live market opened in a new tab." : "No valid market URL is available.", { timeoutMs: 3000 });
-        renderStatus("complete", opened ? "Opening venue" : "Could not open venue", opened ? "Live venue opened externally." : "No valid market URL is available.");
         return;
       }
       if (action === "info") {
