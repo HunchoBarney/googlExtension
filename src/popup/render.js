@@ -984,7 +984,8 @@
       const wave = Math.sin((index + (seed % 9)) / 4.2) * config.amplitude;
       const counter = Math.cos((index + (seed % 13)) / 2.8) * Math.max(8, config.amplitude * 0.46);
       const jag = (((seed >> (index % 16)) & 7) - 3) * 3.2;
-      const y = clampNumber(base + wave + counter + jag, 28, height - 30);
+      const selectedPeak = -Math.exp(-Math.pow(index - 32, 2) / 8) * config.amplitude * 1.05;
+      const y = clampNumber(base + wave + counter + jag + selectedPeak, 28, height - 30);
       points.push([x, y]);
     }
     return points;
@@ -1000,7 +1001,7 @@
 
   function chartMarker(candidate, price, range = "1M") {
     const points = chartPoints(candidate, price, range);
-    const focus = points.filter(([x]) => x >= 250 && x <= 385);
+    const focus = points.filter(([x]) => x >= 250 && x <= 345);
     const candidates = focus.length ? focus : points;
     const [x, y] = candidates.reduce((best, point) => point[1] < best[1] ? point : best, candidates[0] || [292, 84]);
     return { x, y };

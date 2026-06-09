@@ -236,6 +236,7 @@ async function inspectTradeLayout(page) {
       viewRect: viewRect ? viewRect.toJSON() : null,
       chartRect: chartRect ? chartRect.toJSON() : null,
       chartPriceRect: chartPriceRect ? chartPriceRect.toJSON() : null,
+      chartMarkerCx: chartMarkerDot ? Number(chartMarkerDot.getAttribute("cx")) : null,
       chartMarkerCy: chartMarkerDot ? Number(chartMarkerDot.getAttribute("cy")) : null,
       ticketRect: ticketRect ? ticketRect.toJSON() : null,
       buyRect: buyRect ? buyRect.toJSON() : null,
@@ -558,8 +559,8 @@ async function main() {
         if (tradeView.tradeTitleFontSize < 21.5 || tradeView.tradeTitleFontSize > 22.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 45 || tradeView.tradeTitleRect.height > 54) {
           throw new Error(`${viewport.name} trade title font size drifted from the reference scale: ${tradeView.tradeTitleFontSize}`);
         }
-        if (!tradeView.chartRect || !tradeView.chartPriceRect || tradeView.chartPriceRect.top > tradeView.chartRect.top + 48 || tradeView.chartMarkerCy === null || tradeView.chartMarkerCy > 98) {
-          throw new Error(`${viewport.name} trade chart marker drifted from the reference peak placement: ${JSON.stringify({ chart: tradeView.chartRect, price: tradeView.chartPriceRect, markerCy: tradeView.chartMarkerCy })}`);
+        if (!tradeView.chartRect || !tradeView.chartPriceRect || tradeView.chartPriceRect.top > tradeView.chartRect.top + 48 || tradeView.chartMarkerCx === null || tradeView.chartMarkerCx < 300 || tradeView.chartMarkerCx > 355 || tradeView.chartMarkerCy === null || tradeView.chartMarkerCy > 98) {
+          throw new Error(`${viewport.name} trade chart marker drifted from the reference peak placement: ${JSON.stringify({ chart: tradeView.chartRect, price: tradeView.chartPriceRect, markerCx: tradeView.chartMarkerCx, markerCy: tradeView.chartMarkerCy })}`);
         }
         if (!hyperliquidTradeView || hyperliquidTradeView.sourceLabel !== "Hyperliquid" || !/^Buy\s+Long/.test(hyperliquidTradeView.buyText) || !/Est\. contracts:/.test(hyperliquidTradeView.estimateText)) {
           throw new Error(`${viewport.name} Hyperliquid trade view controls were incomplete: ${JSON.stringify(hyperliquidTradeView)}`);
