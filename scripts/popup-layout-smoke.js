@@ -207,19 +207,27 @@ async function inspectTradeLayout(page) {
     const shell = document.querySelector(".popup-shell");
     const view = document.querySelector(".trade-view");
     const book = document.querySelector(".trade-order-book");
+    const ticket = document.querySelector(".trade-ticket");
     const buy = document.querySelector(".trade-buy-button");
     const chart = document.querySelector(".trade-chart-card");
     const shellRect = shell ? shell.getBoundingClientRect() : null;
     const viewRect = view ? view.getBoundingClientRect() : null;
     const bookRect = book ? book.getBoundingClientRect() : null;
+    const ticketRect = ticket ? ticket.getBoundingClientRect() : null;
     const buyRect = buy ? buy.getBoundingClientRect() : null;
     const chartRect = chart ? chart.getBoundingClientRect() : null;
+    const visibleOrderBookRows = shellRect ? [...document.querySelectorAll(".trade-book-row")]
+      .filter((row) => {
+        const rect = row.getBoundingClientRect();
+        return rect.top < shellRect.bottom && rect.bottom > shellRect.top;
+      }).length : 0;
     return {
       bodyText: document.body.textContent.replace(/\s+/g, " ").trim(),
       documentWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
       shellRect: shellRect ? shellRect.toJSON() : null,
       viewRect: viewRect ? viewRect.toJSON() : null,
       chartRect: chartRect ? chartRect.toJSON() : null,
+      ticketRect: ticketRect ? ticketRect.toJSON() : null,
       buyRect: buyRect ? buyRect.toJSON() : null,
       bookRect: bookRect ? bookRect.toJSON() : null,
       tradeViewCount: document.querySelectorAll(".trade-view").length,
@@ -229,6 +237,7 @@ async function inspectTradeLayout(page) {
       buyText: buy?.textContent.trim() || "",
       estimateText: document.querySelector(".trade-estimate")?.textContent.trim() || "",
       orderBookRows: document.querySelectorAll(".trade-book-row").length,
+      visibleOrderBookRows,
       sourceBadgeCount: document.querySelectorAll(".trade-view .source-badge").length
     };
   });
@@ -512,6 +521,12 @@ async function main() {
         }
         if (!tradeView.shellRect || !tradeView.bookRect || !tradeView.buyRect || tradeView.bookRect.top > tradeView.shellRect.bottom - 90 || tradeView.buyRect.bottom > tradeView.shellRect.bottom + 1) {
           throw new Error(`${viewport.name} trade view pushed the order book out of the first screen: ${JSON.stringify(tradeView)}`);
+        }
+        if (!tradeView.ticketRect || tradeView.ticketRect.height < 184 || tradeView.ticketRect.height > 198 || !tradeView.bookRect || tradeView.bookRect.top < 646 || tradeView.bookRect.top > 666) {
+          throw new Error(`${viewport.name} trade view ticket rhythm drifted from the reference: ${JSON.stringify({ ticket: tradeView.ticketRect, book: tradeView.bookRect })}`);
+        }
+        if (tradeView.visibleOrderBookRows < 10) {
+          throw new Error(`${viewport.name} trade view did not expose all first-screen order-book rows: ${JSON.stringify(tradeView)}`);
         }
       }
       if (layout.articlePreviewCount !== 0) {
