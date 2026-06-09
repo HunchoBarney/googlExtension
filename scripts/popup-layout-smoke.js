@@ -206,6 +206,7 @@ async function inspectTradeLayout(page) {
   return page.evaluate(() => {
     const shell = document.querySelector(".popup-shell");
     const view = document.querySelector(".trade-view");
+    const tradeTitle = document.querySelector(".trade-hero h2");
     const book = document.querySelector(".trade-order-book");
     const ticket = document.querySelector(".trade-ticket");
     const buy = document.querySelector(".trade-buy-button");
@@ -216,6 +217,7 @@ async function inspectTradeLayout(page) {
     const ticketRect = ticket ? ticket.getBoundingClientRect() : null;
     const buyRect = buy ? buy.getBoundingClientRect() : null;
     const chartRect = chart ? chart.getBoundingClientRect() : null;
+    const titleRect = tradeTitle ? tradeTitle.getBoundingClientRect() : null;
     const visibleOrderBookRows = shellRect ? [...document.querySelectorAll(".trade-book-row")]
       .filter((row) => {
         const rect = row.getBoundingClientRect();
@@ -232,7 +234,9 @@ async function inspectTradeLayout(page) {
       bookRect: bookRect ? bookRect.toJSON() : null,
       tradeViewCount: document.querySelectorAll(".trade-view").length,
       activeRange: document.querySelector(".trade-range-button.is-active")?.textContent.trim() || "",
-      tradeTitle: document.querySelector(".trade-hero h2")?.textContent.trim() || "",
+      tradeTitle: tradeTitle?.textContent.trim() || "",
+      tradeTitleFontSize: tradeTitle ? Number.parseFloat(getComputedStyle(tradeTitle).fontSize) : 0,
+      tradeTitleRect: titleRect ? titleRect.toJSON() : null,
       tradeMeta: document.querySelector(".trade-meta")?.textContent.replace(/\s+/g, " ").trim() || "",
       tradeActionLabels: [...document.querySelectorAll("[data-trade-action]")].map((node) => node.textContent.trim()),
       buyText: buy?.textContent.trim() || "",
@@ -531,6 +535,9 @@ async function main() {
         }
         if (JSON.stringify(tradeView.tradeActionLabels) !== JSON.stringify(["Settings", "Connect", "Information"])) {
           throw new Error(`${viewport.name} trade action menu labels drifted from the reference: ${JSON.stringify(tradeView.tradeActionLabels)}`);
+        }
+        if (tradeView.tradeTitleFontSize < 21.5 || tradeView.tradeTitleFontSize > 22.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 45 || tradeView.tradeTitleRect.height > 54) {
+          throw new Error(`${viewport.name} trade title font size drifted from the reference scale: ${tradeView.tradeTitleFontSize}`);
         }
       }
       if (layout.articlePreviewCount !== 0) {
