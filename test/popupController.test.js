@@ -32,7 +32,7 @@ function waitFor(condition, label) {
   });
 }
 
-function setupPopup({ extractResult, searchResult, searchError, hyperliquidResult, hyperliquidError, enrichGroups, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
+function setupPopup({ extractResult, searchResult, searchError, tradeDataResult, hyperliquidResult, hyperliquidError, enrichGroups, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
   const dom = new JSDOM(`<!doctype html><body>
     <main class="popup-shell is-menu-open">
     <div class="menu-wrap">
@@ -74,6 +74,7 @@ function setupPopup({ extractResult, searchResult, searchError, hyperliquidResul
     traderEnrichments: [],
     marketSearches: [],
     trendingSearches: [],
+    tradeDataRequests: [],
     hyperliquidArticleSearches: [],
     hyperliquidMarketSearches: [],
     hyperliquidTrendingSearches: [],
@@ -214,6 +215,12 @@ function setupPopup({ extractResult, searchResult, searchError, hyperliquidResul
     async enrichGroupsWithTraderCounts(groups, options) {
       calls.traderEnrichments.push({ groups, options });
       return enrichGroups ? enrichGroups(groups, options) : groups;
+    },
+    async fetchClobTradeData(candidate, options) {
+      calls.tradeDataRequests.push({ candidate, options });
+      return typeof tradeDataResult === "function"
+        ? tradeDataResult(candidate, options)
+        : (tradeDataResult || null);
     }
   };
 
@@ -605,6 +612,85 @@ test("real renderer trade controls work through the popup controller", async () 
   }));
   assert.equal(document.querySelector(".trade-view"), null);
   assert.equal(document.querySelectorAll(".market-card").length, 1);
+});
+
+test("real renderer hydrates Polymarket trade view with live CLOB data", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "iran-peace",
+    eventId: "iran-peace-event",
+    title: "Will the US and Iran reach a permanent peace deal in 2026?",
+    eventTitle: "US x Iran permanent peace deal by...?",
+    confidence: 88,
+    url: "https://polymarket.com/event/us-iran-peace-deal",
+    primaryPrice: 0.32,
+    secondaryPrice: 0.68,
+    primaryPercent: 32,
+    outcomeOptions: [
+      { label: "Yes", price: 0.32, percent: 32, clobTokenId: "yes-token" },
+      { label: "No", price: 0.68, percent: 68, clobTokenId: "no-token" }
+    ]
+  });
+  const tradeDataResult = {
+    tradeDataSource: "clob",
+    tradeBooksByTokenId: {
+      "yes-token": {
+        bids: [{ price: 0.31, size: 123 }],
+        asks: [{ price: 0.33, size: 456 }]
+      },
+      "no-token": {
+        bids: [{ price: 0.66, size: 789 }],
+        asks: [{ price: 0.69, size: 987 }]
+      }
+    },
+    tradeChartHistoryByTokenId: {
+      "yes-token": {
+        "1M": [
+          { t: 1780000000, p: 0.3 },
+          { t: 1780086400, p: 0.32 }
+        ],
+        "1Y": [
+          { t: 1760000000, p: 0.2 },
+          { t: 1770000000, p: 0.46 },
+          { t: 1780086400, p: 0.32 }
+        ]
+      }
+    }
+  };
+  const { dom, calls, refreshButton } = setupPopup({
+    searchResult: [candidate],
+    tradeDataResult,
+    useRealRenderer: true
+  });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "CLOB hydrate initial popup run");
+
+  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  await waitFor(() => (
+    calls.tradeDataRequests.length === 1 &&
+    calls.tradeViews.length === 2 &&
+    document.querySelector(".trade-book-bid .trade-book-row span:nth-child(2)")?.textContent === "123"
+  ), "live CLOB trade hydration");
+
+  assert.equal(calls.tradeDataRequests[0].candidate.id, "iran-peace");
+  assert.equal(typeof calls.tradeDataRequests[0].options.fetchImpl, "function");
+  assert.equal(document.querySelector(".trade-chart-price").textContent, "$0.3200");
+  assert.equal(calls.statuses.at(-1).detail, "Live depth loaded.");
+
+  document.querySelector("[data-trade-side='no']").dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+
+  assert.equal(document.querySelector("[data-trade-buy]").textContent, "Buy No");
+  assert.deepEqual(
+    Array.from(document.querySelector(".trade-book-bid .trade-book-row").querySelectorAll("span")).map((node) => node.textContent),
+    ["66\u00a2", "789", "789"]
+  );
 });
 
 test("real renderer Hyperliquid trade controls stay Long Short through the popup controller", async () => {

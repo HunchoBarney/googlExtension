@@ -28,6 +28,7 @@ test("manifest keeps manual-activation MV3 permissions narrow", () => {
   assert.deepEqual(manifest.host_permissions, [
     "https://gamma-api.polymarket.com/*",
     "https://data-api.polymarket.com/*",
+    "https://clob.polymarket.com/*",
     "https://api.hyperliquid.xyz/*"
   ]);
   assert.equal(manifest.content_scripts, undefined);

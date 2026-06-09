@@ -290,6 +290,63 @@ test("renders an internal trade view with chart, order ticket, and order book", 
   assert.equal(view.querySelectorAll(".trade-book-ask .trade-book-row").length, 5);
 });
 
+test("trade view renders live CLOB chart history and depth when provided", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderTradeView(results, makeBinaryCandidate({
+    id: "iran-peace",
+    title: "Will the US and Iran reach a permanent peace deal in 2026?",
+    primaryPrice: 0.32,
+    secondaryPrice: 0.68,
+    primaryPercent: 32,
+    outcomeOptions: [
+      { label: "Yes", price: 0.32, percent: 32, clobTokenId: "yes-token" },
+      { label: "No", price: 0.68, percent: 68, clobTokenId: "no-token" }
+    ],
+    tradeBooksByTokenId: {
+      "yes-token": {
+        bids: [{ price: 0.31, size: 123 }],
+        asks: [{ price: 0.33, size: 456 }]
+      },
+      "no-token": {
+        bids: [{ price: 0.66, size: 789 }],
+        asks: [{ price: 0.69, size: 987 }]
+      }
+    },
+    tradeChartHistoryByTokenId: {
+      "yes-token": {
+        "1M": [
+          { t: 1780000000, p: 0.3 },
+          { t: 1780086400, p: 0.32 }
+        ],
+        "1Y": [
+          { t: 1760000000, p: 0.2 },
+          { t: 1770000000, p: 0.46 },
+          { t: 1780086400, p: 0.32 }
+        ]
+      }
+    }
+  }));
+
+  const view = results.querySelector(".trade-view");
+  assert.equal(view.querySelector(".trade-chart-price").textContent, "$0.3200");
+  assert.equal(view.querySelector("[data-trade-range='1M']").dataset.chartPrice, "$0.3200");
+  assert.notEqual(
+    view.querySelector("[data-trade-range='1M']").dataset.chartPath,
+    view.querySelector("[data-trade-range='1Y']").dataset.chartPath
+  );
+  assert.deepEqual(
+    Array.from(view.querySelector(".trade-book-bid .trade-book-row").querySelectorAll("span")).map((node) => node.textContent),
+    ["31\u00a2", "123", "123"]
+  );
+  assert.deepEqual(
+    Array.from(view.querySelector(".trade-book-ask .trade-book-row").querySelectorAll("span")).map((node) => node.textContent),
+    ["33\u00a2", "456", "456"]
+  );
+  const noRows = JSON.parse(view.querySelector("[data-trade-side='no']").dataset.tradeBookBidRows);
+  assert.equal(noRows[0].shares, 789);
+});
+
 test("trade view prefers the actual market question over grouped event copy", () => {
   const { renderer, results } = setupRenderer();
 

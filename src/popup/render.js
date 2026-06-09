@@ -332,7 +332,8 @@
       .map((option) => ({
         label: option.label,
         price: option.price,
-        percent: option.percent
+        percent: option.percent,
+        clobTokenId: option.clobTokenId || option.tokenId || option.assetId || ""
       }));
 
     if (!options.length) {
@@ -340,14 +341,16 @@
         {
           label: candidate.primaryOutcome || "Yes",
           price: candidate.primaryPrice,
-          percent: candidate.primaryPercent
+          percent: candidate.primaryPercent,
+          clobTokenId: Array.isArray(candidate.clobTokenIds) ? candidate.clobTokenIds[0] || "" : ""
         },
         {
           label: candidate.secondaryOutcome || "No",
           price: candidate.secondaryPrice,
           percent: candidate.secondaryPrice === null || candidate.secondaryPrice === undefined
             ? null
-            : Number(candidate.secondaryPrice) * 100
+            : Number(candidate.secondaryPrice) * 100,
+          clobTokenId: Array.isArray(candidate.clobTokenIds) ? candidate.clobTokenIds[1] || "" : ""
         }
       );
     }
@@ -720,6 +723,44 @@
     return Number.isFinite(price) ? `$${price.toFixed(4)}` : "n/a";
   }
 
+  function normalizedOutcomeToken(outcome = {}) {
+    return text(outcome.clobTokenId || outcome.tokenId || outcome.assetId).trim();
+  }
+
+  function outcomeLookupKey(value) {
+    return text(value).trim().toLowerCase();
+  }
+
+  function lookupByOutcome(candidate = {}, outcome = {}, field) {
+    const source = candidate[field];
+    if (!source || typeof source !== "object") {
+      return null;
+    }
+    const tokenId = normalizedOutcomeToken(outcome);
+    if (tokenId && source[tokenId]) {
+      return source[tokenId];
+    }
+    const label = outcomeLookupKey(outcome.label);
+    if (label && source[label]) {
+      return source[label];
+    }
+    return null;
+  }
+
+  function tradeBookForOutcome(candidate = {}, outcome = {}) {
+    return lookupByOutcome(candidate, outcome, "tradeBooksByTokenId") ||
+      lookupByOutcome(candidate, outcome, "tradeBooksByOutcome") ||
+      (outcomeLookupKey(outcome.label) === outcomeLookupKey(candidate.primaryOutcome) ? candidate.tradeBook : null) ||
+      null;
+  }
+
+  function tradeHistoryForOutcome(candidate = {}, outcome = {}) {
+    return lookupByOutcome(candidate, outcome, "tradeChartHistoryByTokenId") ||
+      lookupByOutcome(candidate, outcome, "tradeChartHistoryByOutcome") ||
+      (outcomeLookupKey(outcome.label) === outcomeLookupKey(candidate.primaryOutcome) ? candidate.tradeChartHistory : null) ||
+      null;
+  }
+
   function tradeOutcomes(candidate = {}) {
     const outcomes = candidateOutcomeOptions(candidate);
     const primary = outcomes[0] || {
@@ -737,14 +778,18 @@
           price,
           chartPrice: 0.5,
           displayValue,
-          unitName: "contracts"
+          unitName: "contracts",
+          tradeBook: tradeBookForOutcome(candidate, { label: "Long" }),
+          tradeChartHistory: tradeHistoryForOutcome(candidate, { label: "Long" })
         },
         {
           label: "Short",
           price,
           chartPrice: 0.5,
           displayValue,
-          unitName: "contracts"
+          unitName: "contracts",
+          tradeBook: tradeBookForOutcome(candidate, { label: "Short" }),
+          tradeChartHistory: tradeHistoryForOutcome(candidate, { label: "Short" })
         }
       ];
     }
@@ -765,11 +810,17 @@
     return [
       {
         label: primary.label || "Yes",
-        price: yesPrice
+        price: yesPrice,
+        clobTokenId: primary.clobTokenId || "",
+        tradeBook: tradeBookForOutcome(candidate, primary),
+        tradeChartHistory: tradeHistoryForOutcome(candidate, primary)
       },
       {
         label: secondary.label || "No",
-        price: noPrice
+        price: noPrice,
+        clobTokenId: secondary.clobTokenId || "",
+        tradeBook: tradeBookForOutcome(candidate, secondary),
+        tradeChartHistory: tradeHistoryForOutcome(candidate, secondary)
       }
     ];
   }
@@ -821,6 +872,106 @@
     };
   }
 
+  function normalizeChartHistory(history) {
+    return (Array.isArray(history) ? history : [])
+      .map((point) => {
+        const timeValue = Array.isArray(point)
+          ? point[0]
+          : point && (point.t || point.timestamp || point.time);
+        const priceValue = Array.isArray(point)
+          ? point[1]
+          : point && (point.p || point.price || point.value);
+        const t = Number(timeValue);
+        const p = Number(priceValue);
+        return Number.isFinite(p) && p > 0
+          ? { t: Number.isFinite(t) ? t : null, p }
+          : null;
+      })
+      .filter(Boolean);
+  }
+
+  function chartHistoryForRange(outcome, range) {
+    const source = outcome && outcome.tradeChartHistory;
+    if (!source) {
+      return [];
+    }
+    if (Array.isArray(source)) {
+      return normalizeChartHistory(source);
+    }
+    const key = text(range || "1M").toUpperCase();
+    const fallback = source.ALL || source.all || source.max || source["1M"] || Object.values(source).find((value) => Array.isArray(value));
+    return normalizeChartHistory(source[key] || source[key.toLowerCase()] || fallback);
+  }
+
+  function chartPointTimeMs(point) {
+    const value = Number(point && point.t);
+    if (!Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+    return value < 10000000000 ? value * 1000 : value;
+  }
+
+  function formatChartPointDate(point, fallback) {
+    const timeMs = chartPointTimeMs(point);
+    if (!timeMs) {
+      return fallback;
+    }
+    return new Date(timeMs).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  function formatChartNumericPrice(value, outcome) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return chartDisplayPrice(outcome);
+    }
+    return numeric >= 1
+      ? formatAssetPrice(numeric)
+      : `$${numeric.toFixed(4)}`;
+  }
+
+  function historyChartGeometry(history, fallbackLabel) {
+    const points = normalizeChartHistory(history);
+    if (points.length < 2) {
+      return null;
+    }
+    const width = 420;
+    const top = 28;
+    const bottom = 160;
+    const priceValues = points.map((point) => point.p);
+    const minPrice = Math.min(...priceValues);
+    const maxPrice = Math.max(...priceValues);
+    const spread = Math.max(maxPrice - minPrice, maxPrice * 0.04, 0.01);
+    const domainMin = minPrice - spread * 0.18;
+    const domainMax = maxPrice + spread * 0.18;
+    const domainSpread = Math.max(domainMax - domainMin, 0.01);
+    const times = points.map(chartPointTimeMs);
+    const firstTime = times.find((time) => time !== null);
+    const lastTime = [...times].reverse().find((time) => time !== null);
+    const useTimeScale = firstTime !== null && lastTime !== null && lastTime > firstTime;
+    const xFor = (point, index) => {
+      if (useTimeScale) {
+        const timeMs = chartPointTimeMs(point);
+        if (timeMs !== null) {
+          return clampNumber(((timeMs - firstTime) / (lastTime - firstTime)) * width, 0, width);
+        }
+      }
+      return points.length === 1 ? width : (width / (points.length - 1)) * index;
+    };
+    const yFor = (point) => clampNumber(bottom - ((point.p - domainMin) / domainSpread) * (bottom - top), top, bottom);
+    const path = points.reduce((result, point, index) => {
+      const command = index === 0 ? "M" : "L";
+      return `${result}${command}${xFor(point, index).toFixed(1)} ${yFor(point).toFixed(1)} `;
+    }, "").trim();
+    const markerPoint = points[points.length - 1];
+    return {
+      path,
+      markerX: xFor(markerPoint, points.length - 1),
+      markerY: yFor(markerPoint),
+      price: markerPoint.p,
+      label: formatChartPointDate(markerPoint, fallbackLabel)
+    };
+  }
+
   function chartPath(candidate, price, range = "1M") {
     const width = 420;
     const height = 190;
@@ -851,14 +1002,35 @@
   }
 
   function appendChartDataset(button, candidate, primary, range) {
+    const dataset = tradeChartDataset(candidate, primary, range);
+    button.dataset.chartPath = dataset.path;
+    button.dataset.chartDate = dataset.date;
+    button.dataset.chartMarkerX = String(dataset.markerX);
+    button.dataset.chartMarkerY = String(dataset.markerY);
+    button.dataset.chartPrice = dataset.price;
+  }
+
+  function tradeChartDataset(candidate, primary, range) {
     const config = chartRangeConfig(range);
+    const liveChart = historyChartGeometry(chartHistoryForRange(primary, range), config.label);
+    if (liveChart) {
+      return {
+        path: liveChart.path,
+        date: liveChart.label,
+        markerX: liveChart.markerX,
+        markerY: liveChart.markerY,
+        price: formatChartNumericPrice(liveChart.price, primary)
+      };
+    }
     const chartPrice = chartBasisPrice(primary);
     const marker = chartMarker(candidate, chartPrice, range);
-    button.dataset.chartPath = chartPath(candidate, chartPrice, range);
-    button.dataset.chartDate = config.label;
-    button.dataset.chartMarkerX = String(marker.x);
-    button.dataset.chartMarkerY = String(marker.y);
-    button.dataset.chartPrice = chartDisplayPrice(primary);
+    return {
+      path: chartPath(candidate, chartPrice, range),
+      date: config.label,
+      markerX: marker.x,
+      markerY: marker.y,
+      price: chartDisplayPrice(primary)
+    };
   }
 
   function createTradeChart(candidate, primary) {
@@ -877,34 +1049,33 @@
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", "trade-chart-line");
-    const chartPrice = chartBasisPrice(primary);
-    path.setAttribute("d", chartPath(candidate, chartPrice, "1M"));
+    const initialChart = tradeChartDataset(candidate, primary, "1M");
+    path.setAttribute("d", initialChart.path);
     svg.append(path);
 
-    const marker = chartMarker(candidate, chartPrice, "1M");
     const markerLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
     markerLine.setAttribute("class", "trade-chart-marker-line");
-    markerLine.setAttribute("x1", String(marker.x));
-    markerLine.setAttribute("x2", String(marker.x));
-    markerLine.setAttribute("y1", String(marker.y));
+    markerLine.setAttribute("x1", String(initialChart.markerX));
+    markerLine.setAttribute("x2", String(initialChart.markerX));
+    markerLine.setAttribute("y1", String(initialChart.markerY));
     markerLine.setAttribute("y2", "168");
     const markerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     markerDot.setAttribute("class", "trade-chart-marker-dot");
-    markerDot.setAttribute("cx", String(marker.x));
-    markerDot.setAttribute("cy", String(marker.y));
+    markerDot.setAttribute("cx", String(initialChart.markerX));
+    markerDot.setAttribute("cy", String(initialChart.markerY));
     markerDot.setAttribute("r", "5.8");
     svg.append(markerLine, markerDot);
 
     const priceLabel = document.createElement("span");
     priceLabel.className = "trade-chart-price";
-    priceLabel.textContent = chartDisplayPrice(primary);
-    priceLabel.style.left = `${(marker.x / 420) * 100}%`;
-    priceLabel.style.top = `${Math.max(10, marker.y - 56)}px`;
+    priceLabel.textContent = initialChart.price;
+    priceLabel.style.left = `${(initialChart.markerX / 420) * 100}%`;
+    priceLabel.style.top = `${Math.max(10, initialChart.markerY - 56)}px`;
 
     const dateLabel = document.createElement("span");
     dateLabel.className = "trade-chart-date";
-    dateLabel.textContent = chartRangeConfig("1M").label;
-    dateLabel.style.left = `${(marker.x / 420) * 100}%`;
+    dateLabel.textContent = initialChart.date;
+    dateLabel.style.left = `${(initialChart.markerX / 420) * 100}%`;
 
     frame.append(svg, priceLabel, dateLabel);
 
@@ -925,7 +1096,50 @@
     return chart;
   }
 
-  function createOrderTicket(outcomes) {
+  function formatOrderRowPrice(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return "n/a";
+    }
+    return numeric >= 1 ? formatAssetPrice(numeric) : formatCents(numeric);
+  }
+
+  function normalizedProvidedOrderRows(book, side) {
+    const source = side === "bid" ? book && book.bids : book && book.asks;
+    const rows = (Array.isArray(source) ? source : [])
+      .map((row) => {
+        const price = Number(Array.isArray(row) ? row[0] : row && row.price);
+        const shares = Number(Array.isArray(row) ? row[1] : row && (row.size || row.shares));
+        return Number.isFinite(price) && price > 0 && Number.isFinite(shares) && shares > 0
+          ? { price, shares }
+          : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => side === "bid" ? b.price - a.price : a.price - b.price)
+      .slice(0, 5);
+    if (!rows.length) {
+      return null;
+    }
+    let total = 0;
+    return rows.map((row) => {
+      total += row.shares;
+      return {
+        price: formatOrderRowPrice(row.price),
+        shares: row.shares,
+        total
+      };
+    });
+  }
+
+  function orderRowsForOutcome(candidate, outcome, side) {
+    const liveRows = normalizedProvidedOrderRows(outcome && outcome.tradeBook, side);
+    if (liveRows) {
+      return liveRows;
+    }
+    return orderRows(outcome && outcome.price, side, `${marketKey(candidate)}:${outcome && outcome.label}:${side}`);
+  }
+
+  function createOrderTicket(candidate, outcomes) {
     const ticket = document.createElement("section");
     ticket.className = "trade-ticket";
     ticket.setAttribute("aria-label", "Order ticket");
@@ -940,6 +1154,8 @@
       button.dataset.tradeLabel = outcome.label;
       button.dataset.tradePrice = String(outcome.price);
       button.dataset.tradeUnit = outcome.unitName || "shares";
+      button.dataset.tradeBookBidRows = JSON.stringify(orderRowsForOutcome(candidate, outcome, "bid"));
+      button.dataset.tradeBookAskRows = JSON.stringify(orderRowsForOutcome(candidate, outcome, "ask"));
       button.setAttribute("aria-pressed", String(index === 0));
       button.textContent = `${outcome.label}  ${outcome.displayValue || formatCents(outcome.price)}`;
       sideRow.append(button);
@@ -1040,7 +1256,7 @@
       const rows = document.createElement("div");
       rows.className = "trade-book-rows";
       rows.dataset.tradeBookSide = side;
-      const rowData = orderRows(outcomes[0].price, side, `${marketKey(candidate)}:${side}`);
+      const rowData = orderRowsForOutcome(candidate, outcomes[0], side);
       const maxShares = Math.max(1, ...rowData.map((row) => Number(row.shares)).filter((value) => Number.isFinite(value) && value > 0));
       for (const row of rowData) {
         const line = document.createElement("div");
@@ -1380,7 +1596,7 @@
       actionPopover,
       hero,
       createTradeChart(candidate, outcomes[0]),
-      createOrderTicket(outcomes),
+      createOrderTicket(candidate, outcomes),
       createOrderBook(candidate, outcomes)
     );
     root.append(view);

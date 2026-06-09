@@ -21,6 +21,7 @@
 
   const GAMMA_API = "https://gamma-api.polymarket.com";
   const DATA_API = "https://data-api.polymarket.com";
+  const CLOB_API = "https://clob.polymarket.com";
   const POLYMARKET = "https://polymarket.com";
   const DEFAULT_MIN_CONFIDENCE = 55;
   const DEFAULT_MAX_RESULTS = 5;
@@ -1687,6 +1688,136 @@
     ]);
   }
 
+  function candidateClobTokenIds(candidate = {}) {
+    const tokens = [];
+    const addToken = (value) => {
+      if (value === null || value === undefined || value === "") {
+        return;
+      }
+      const token = String(value).trim();
+      if (token && !tokens.includes(token)) {
+        tokens.push(token);
+      }
+    };
+
+    const outcomes = Array.isArray(candidate.outcomeOptions) ? candidate.outcomeOptions : [];
+    for (const outcome of outcomes) {
+      addToken(outcome && (outcome.clobTokenId || outcome.tokenId || outcome.assetId));
+    }
+    if (Array.isArray(candidate.clobTokenIds)) {
+      for (const token of candidate.clobTokenIds) {
+        addToken(token);
+      }
+    }
+    const raw = candidate.raw || {};
+    for (const token of safeJsonArray(raw.clobTokenIds)) {
+      addToken(token);
+    }
+    addToken(candidate.clobTokenId);
+    addToken(raw.clobTokenId);
+    return tokens;
+  }
+
+  function normalizeClobOrderRows(rows) {
+    return (Array.isArray(rows) ? rows : [])
+      .map((row) => {
+        const price = Array.isArray(row) ? toNumber(row[0]) : toNumber(row && row.price);
+        const size = Array.isArray(row) ? toNumber(row[1]) : firstNumber(row && row.size, row && row.shares);
+        return price !== null && size !== null && price > 0 && size > 0
+          ? { price, size }
+          : null;
+      })
+      .filter(Boolean);
+  }
+
+  function normalizeClobBook(payload) {
+    const book = payload && payload.book ? payload.book : payload;
+    if (!book || typeof book !== "object") {
+      return null;
+    }
+    const bids = normalizeClobOrderRows(book.bids);
+    const asks = normalizeClobOrderRows(book.asks);
+    if (!bids.length && !asks.length) {
+      return null;
+    }
+    return { bids, asks };
+  }
+
+  function normalizeClobHistory(payload) {
+    const rows = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload && payload.history)
+        ? payload.history
+        : [];
+    return rows
+      .map((point) => {
+        const t = Array.isArray(point)
+          ? firstNumber(point[0])
+          : firstNumber(point && point.t, point && point.timestamp, point && point.time);
+        const p = Array.isArray(point)
+          ? firstNumber(point[1])
+          : firstNumber(point && point.p, point && point.price, point && point.value);
+        return t !== null && p !== null && p > 0
+          ? { t, p }
+          : null;
+      })
+      .filter(Boolean);
+  }
+
+  async function fetchClobTradeData(candidate, options = {}) {
+    const fetchImpl = options.fetchImpl || (typeof fetch !== "undefined" ? fetch.bind(globalThis) : null);
+    const tokenIds = candidateClobTokenIds(candidate);
+    if (!fetchImpl || !tokenIds.length) {
+      return null;
+    }
+
+    const timeoutMs = Number(options.timeoutMs) || 6500;
+    const tokensForBooks = tokenIds.slice(0, 2);
+    const tradeBooksByTokenId = {};
+    const primaryTokenId = tokenIds[0];
+    const bookRequests = Promise.allSettled(tokensForBooks.map(async (tokenId) => {
+      const payload = await withTimeout(fetchJson(fetchImpl, `${CLOB_API}/book?token_id=${encodeURIComponent(tokenId)}`), timeoutMs);
+      const book = normalizeClobBook(payload);
+      if (book) {
+        tradeBooksByTokenId[tokenId] = book;
+      }
+    }));
+
+    const historyRequests = [
+      ["1D", "1d", 15],
+      ["1W", "1w", 60],
+      ["1M", "1m", 60],
+      ["1Y", "1y", 1440],
+      ["ALL", "max", 1440]
+    ];
+    const histories = {};
+    const chartRequests = Promise.allSettled(historyRequests.map(async ([range, interval, fidelity]) => {
+      const params = new URLSearchParams({
+        market: primaryTokenId,
+        interval,
+        fidelity: String(fidelity)
+      });
+      const payload = await withTimeout(fetchJson(fetchImpl, `${CLOB_API}/prices-history?${params.toString()}`), timeoutMs);
+      const history = normalizeClobHistory(payload);
+      if (history.length) {
+        histories[range] = history;
+      }
+    }));
+    await Promise.all([bookRequests, chartRequests]);
+
+    const hasBooks = Object.keys(tradeBooksByTokenId).length > 0;
+    const hasHistory = Object.keys(histories).length > 0;
+    if (!hasBooks && !hasHistory) {
+      return null;
+    }
+
+    return {
+      tradeDataSource: "clob",
+      tradeBooksByTokenId,
+      tradeChartHistoryByTokenId: hasHistory ? { [primaryTokenId]: histories } : {}
+    };
+  }
+
   async function enrichGroupsWithTraderCounts(groups, options = {}) {
     const fetchImpl = options.fetchImpl || (typeof fetch !== "undefined" ? fetch.bind(globalThis) : null);
     if (!fetchImpl || !Array.isArray(groups) || !groups.length) {
@@ -1805,6 +1936,7 @@
   return {
     GAMMA_API,
     DATA_API,
+    CLOB_API,
     POLYMARKET,
     safeJsonArray,
     toNumber,
@@ -1821,6 +1953,7 @@
     candidateTopicProfile,
     candidateAngleProfile,
     fetchCandidates,
+    fetchClobTradeData,
     fetchMarketPositionSummary,
     enrichGroupsWithTraderCounts,
     trendingMarkets,

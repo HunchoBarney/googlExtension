@@ -43,6 +43,55 @@ test("parses stringified Yes/No outcome fields safely", () => {
   assert.deepEqual(market.clobTokenIds, ["100", "200"]);
 });
 
+test("fetches live CLOB books and price history for trade view data", async () => {
+  const market = polymarket.normalizeMarket({
+    id: "iran-peace",
+    question: "Will the US and Iran reach a permanent peace deal in 2026?",
+    slug: "us-iran-peace",
+    outcomes: "[\"Yes\", \"No\"]",
+    outcomePrices: "[\"0.32\", \"0.68\"]",
+    clobTokenIds: "[\"yes-token\", \"no-token\"]",
+    active: true,
+    closed: false
+  });
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    const parsed = new URL(url);
+    if (parsed.pathname === "/book") {
+      const token = parsed.searchParams.get("token_id");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => token === "yes-token"
+          ? { bids: [{ price: "0.31", size: "123" }], asks: [{ price: "0.33", size: "456" }] }
+          : { bids: [{ price: "0.66", size: "789" }], asks: [{ price: "0.69", size: "987" }] }
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        history: [
+          { t: 1780000000, p: 0.3 },
+          { t: 1780086400, p: 0.32 }
+        ]
+      })
+    };
+  };
+
+  const result = await polymarket.fetchClobTradeData(market, { fetchImpl, timeoutMs: 1000 });
+
+  assert.equal(result.tradeDataSource, "clob");
+  assert.equal(result.tradeBooksByTokenId["yes-token"].bids[0].price, 0.31);
+  assert.equal(result.tradeBooksByTokenId["no-token"].asks[0].size, 987);
+  assert.equal(result.tradeChartHistoryByTokenId["yes-token"]["1M"][1].p, 0.32);
+  assert.equal(result.tradeChartHistoryByTokenId["yes-token"].ALL.length, 2);
+  assert.ok(urls.some((url) => url === "https://clob.polymarket.com/book?token_id=yes-token"));
+  assert.ok(urls.some((url) => url === "https://clob.polymarket.com/book?token_id=no-token"));
+  assert.ok(urls.some((url) => url.startsWith("https://clob.polymarket.com/prices-history?market=yes-token")));
+});
+
 test("parses Up/Down markets and missing movement fields", () => {
   const market = polymarket.normalizeMarket({
     id: "2",

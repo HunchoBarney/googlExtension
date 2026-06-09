@@ -686,6 +686,32 @@
     if (backButton && typeof backButton.focus === "function") {
       backButton.focus({ preventScroll: true });
     }
+    hydrateTradeViewData(candidate);
+  }
+
+  async function hydrateTradeViewData(candidate) {
+    if (!candidate || !polymarket || typeof polymarket.fetchClobTradeData !== "function" || isHyperliquidGroup(candidate) || !global.fetch) {
+      return;
+    }
+    const key = marketKey(candidate);
+    try {
+      const tradeData = await polymarket.fetchClobTradeData(candidate, {
+        fetchImpl: global.fetch.bind(global),
+        timeoutMs: 6500
+      });
+      if (!tradeData || !latestTradeCandidate || marketKey(latestTradeCandidate) !== key || !resultsRegion.querySelector(".trade-view")) {
+        return;
+      }
+      const enriched = {
+        ...candidate,
+        ...tradeData
+      };
+      latestTradeCandidate = enriched;
+      renderer.renderTradeView(resultsRegion, enriched);
+      renderStatus("complete", "Trade view", tradeData.tradeDataSource === "clob" ? "Live depth loaded." : "Review market and order details.");
+    } catch (error) {
+      warnNonFatal("Polymarket trade data query failed; keeping preview trade data.", error);
+    }
   }
 
   function parseTradeAmount(value) {
@@ -781,10 +807,28 @@
       : String(value || "n/a");
   }
 
-  function updateTradeOrderBook(price) {
+  function tradeBookRowsFromButton(button, side) {
+    if (!button || !button.dataset) {
+      return null;
+    }
+    const raw = side === "bid"
+      ? button.dataset.tradeBookBidRows
+      : button.dataset.tradeBookAskRows;
+    if (!raw) {
+      return null;
+    }
+    try {
+      const rows = JSON.parse(raw);
+      return Array.isArray(rows) && rows.length ? rows : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function updateTradeOrderBook(price, sideButton = null) {
     for (const rows of resultsRegion.querySelectorAll("[data-trade-book-side]")) {
       const side = rows.dataset.tradeBookSide;
-      const rowData = tradeBookRows(price, side);
+      const rowData = tradeBookRowsFromButton(sideButton, side) || tradeBookRows(price, side);
       const maxShares = Math.max(1, ...rowData.map((row) => Number(row.shares)).filter((value) => Number.isFinite(value) && value > 0));
       for (const [index, line] of Array.from(rows.querySelectorAll(".trade-book-row")).entries()) {
         const row = rowData[index];
@@ -813,7 +857,7 @@
     }
     const price = Number(button.dataset.tradePrice);
     if (Number.isFinite(price)) {
-      updateTradeOrderBook(price);
+      updateTradeOrderBook(price, button);
     }
     updateTradeTicket();
   }
@@ -1246,8 +1290,9 @@
         return;
       }
       if (action === "info") {
-        showSurfaceMessage("Information", "Prices and depth are previewed locally from the matched market.", { timeoutMs: 3000 });
-        renderStatus("complete", "Information", "Preview values are calculated locally.");
+        const hasLiveData = latestTradeCandidate && latestTradeCandidate.tradeDataSource === "clob";
+        showSurfaceMessage("Information", hasLiveData ? "Prices and depth are loaded from the matched venue when available." : "Prices and depth use a local preview until venue data loads.", { timeoutMs: 3000 });
+        renderStatus("complete", "Information", hasLiveData ? "Live market depth is loaded." : "Preview values are calculated locally.");
       }
       return;
     }
