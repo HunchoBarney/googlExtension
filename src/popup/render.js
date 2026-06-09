@@ -972,7 +972,7 @@
     };
   }
 
-  function chartPath(candidate, price, range = "1M") {
+  function chartPoints(candidate, price, range = "1M") {
     const width = 420;
     const height = 190;
     const config = chartRangeConfig(range);
@@ -987,6 +987,11 @@
       const y = clampNumber(base + wave + counter + jag, 28, height - 30);
       points.push([x, y]);
     }
+    return points;
+  }
+
+  function chartPath(candidate, price, range = "1M") {
+    const points = chartPoints(candidate, price, range);
     return points.reduce((path, point, index) => {
       const command = index === 0 ? "M" : "L";
       return `${path}${command}${point[0].toFixed(1)} ${point[1].toFixed(1)} `;
@@ -994,10 +999,10 @@
   }
 
   function chartMarker(candidate, price, range = "1M") {
-    const config = chartRangeConfig(range);
-    const seed = hashText(`marker:${marketKey(candidate)}:${config.key}`);
-    const x = 270 + (seed % 35);
-    const y = clampNumber(170 - clampNumber(price, 0.05, 0.95) * 112 + ((seed % 15) - 7) + config.drift, 46, 132);
+    const points = chartPoints(candidate, price, range);
+    const focus = points.filter(([x]) => x >= 250 && x <= 385);
+    const candidates = focus.length ? focus : points;
+    const [x, y] = candidates.reduce((best, point) => point[1] < best[1] ? point : best, candidates[0] || [292, 84]);
     return { x, y };
   }
 

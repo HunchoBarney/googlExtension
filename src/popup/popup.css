@@ -1102,6 +1102,7 @@ svg circle {
   color: #bfe478;
   font-weight: 650;
   line-height: 1;
+  white-space: nowrap;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.26);
 }
 

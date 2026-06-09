@@ -211,6 +211,8 @@ async function inspectTradeLayout(page) {
     const ticket = document.querySelector(".trade-ticket");
     const buy = document.querySelector(".trade-buy-button");
     const chart = document.querySelector(".trade-chart-card");
+    const chartPrice = document.querySelector(".trade-chart-price");
+    const chartMarkerDot = document.querySelector(".trade-chart-marker-dot");
     const sourceBadge = document.querySelector(".trade-view .source-badge");
     const sourceMark = document.querySelector(".trade-image-wrap .source-mark");
     const sourceMarkStyle = sourceMark ? getComputedStyle(sourceMark) : null;
@@ -220,6 +222,7 @@ async function inspectTradeLayout(page) {
     const ticketRect = ticket ? ticket.getBoundingClientRect() : null;
     const buyRect = buy ? buy.getBoundingClientRect() : null;
     const chartRect = chart ? chart.getBoundingClientRect() : null;
+    const chartPriceRect = chartPrice ? chartPrice.getBoundingClientRect() : null;
     const titleRect = tradeTitle ? tradeTitle.getBoundingClientRect() : null;
     const visibleOrderBookRows = shellRect ? [...document.querySelectorAll(".trade-book-row")]
       .filter((row) => {
@@ -232,6 +235,8 @@ async function inspectTradeLayout(page) {
       shellRect: shellRect ? shellRect.toJSON() : null,
       viewRect: viewRect ? viewRect.toJSON() : null,
       chartRect: chartRect ? chartRect.toJSON() : null,
+      chartPriceRect: chartPriceRect ? chartPriceRect.toJSON() : null,
+      chartMarkerCy: chartMarkerDot ? Number(chartMarkerDot.getAttribute("cy")) : null,
       ticketRect: ticketRect ? ticketRect.toJSON() : null,
       buyRect: buyRect ? buyRect.toJSON() : null,
       bookRect: bookRect ? bookRect.toJSON() : null,
@@ -552,6 +557,9 @@ async function main() {
         }
         if (tradeView.tradeTitleFontSize < 21.5 || tradeView.tradeTitleFontSize > 22.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 45 || tradeView.tradeTitleRect.height > 54) {
           throw new Error(`${viewport.name} trade title font size drifted from the reference scale: ${tradeView.tradeTitleFontSize}`);
+        }
+        if (!tradeView.chartRect || !tradeView.chartPriceRect || tradeView.chartPriceRect.top > tradeView.chartRect.top + 48 || tradeView.chartMarkerCy === null || tradeView.chartMarkerCy > 98) {
+          throw new Error(`${viewport.name} trade chart marker drifted from the reference peak placement: ${JSON.stringify({ chart: tradeView.chartRect, price: tradeView.chartPriceRect, markerCy: tradeView.chartMarkerCy })}`);
         }
         if (!hyperliquidTradeView || hyperliquidTradeView.sourceLabel !== "Hyperliquid" || !/^Buy\s+Long/.test(hyperliquidTradeView.buyText) || !/Est\. contracts:/.test(hyperliquidTradeView.estimateText)) {
           throw new Error(`${viewport.name} Hyperliquid trade view controls were incomplete: ${JSON.stringify(hyperliquidTradeView)}`);
