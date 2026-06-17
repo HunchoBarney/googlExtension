@@ -25,7 +25,7 @@
   const POLYMARKET = "https://polymarket.com";
   const DEFAULT_MIN_CONFIDENCE = 55;
   const DEFAULT_MAX_RESULTS = 5;
-  const DEFAULT_MAX_CHILD_MARKETS = 5;
+  const DEFAULT_MAX_CHILD_MARKETS = 160;
   const STRONG_MATCH_CONFIDENCE = 55;
   const MAYBE_MATCH_CONFIDENCE = 35;
   const STOPWORDS = new Set([
@@ -280,6 +280,22 @@
     };
   }
 
+  function groupItemTitle(raw) {
+    for (const value of [
+      raw.groupItemTitle,
+      raw.groupItemLabel,
+      raw.groupItemName,
+      raw.groupTitle,
+      raw.outcomeTitle
+    ]) {
+      const label = normalizeWhitespace(value);
+      if (label) {
+        return label;
+      }
+    }
+    return "";
+  }
+
   function isClosed(raw, event, endDate = marketEndDate(raw, event)) {
     return Boolean(
       raw.closed ||
@@ -496,6 +512,7 @@
       question,
       title,
       eventTitle,
+      groupItemTitle: groupItemTitle(raw),
       description,
       category,
       tags,

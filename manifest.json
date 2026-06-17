@@ -4,7 +4,8 @@
   "description": "Finds high-confidence market matches for the article you are reading after manual activation.",
   "version": "0.1.0",
   "action": {
-    "default_title": "Find market matches"
+    "default_title": "Find market matches",
+    "default_popup": "src/popup/popup.html"
   },
   "background": {
     "service_worker": "src/background/serviceWorker.js"

@@ -290,11 +290,10 @@ async function readPopupState(root, sessionId) {
         activeTabText: document.querySelector(".tab-button.is-active")?.textContent.trim() || "",
         activeElementId: document.activeElement?.id || "",
         sortLabel: document.querySelector(".sort-button span")?.textContent.trim() || "",
-        privacyText: document.querySelector(".privacy-footer")?.textContent.replace(/\\s+/g, " ").trim() || "",
+        footerCount: document.querySelectorAll(".privacy-footer").length,
         statusText: document.querySelector("#status-region")?.innerText.replace(/\\s+/g, " ").trim() || "",
         surfaceText: document.querySelector("#surface-message:not([hidden])")?.textContent.replace(/\\s+/g, " ").trim() || "",
         tradeToggleCount: document.querySelectorAll(".trade-toggle").length,
-        tradePressed: document.querySelector("#trade-toggle-button")?.getAttribute("aria-pressed") || "",
         menuButtonCount: document.querySelectorAll(".menu-button").length,
         menuOpen: document.querySelector(".popup-shell")?.classList.contains("is-menu-open") || false,
         menuExpanded: document.querySelector("#menu-button")?.getAttribute("aria-expanded") || "",
@@ -324,7 +323,7 @@ async function readPopupState(root, sessionId) {
             return false;
           }
           const labelRect = label.getBoundingClientRect();
-          return [...firstRow.querySelectorAll(".scenario-dot, .scenario-label, .scenario-value-wrap")].some((node) => {
+          return [...firstRow.querySelectorAll(".scenario-label, .scenario-value-wrap")].some((node) => {
             const nodeRect = node.getBoundingClientRect();
             return labelRect.left < nodeRect.right &&
               labelRect.right > nodeRect.left &&
@@ -339,11 +338,9 @@ async function readPopupState(root, sessionId) {
         const shell = document.querySelector(".popup-shell");
         const firstCard = document.querySelector("a.market-card");
         const results = document.querySelector("#results-region");
-        const footer = document.querySelector(".privacy-footer");
         const shellRect = shell ? shell.getBoundingClientRect() : null;
         const cardRect = firstCard ? firstCard.getBoundingClientRect() : null;
         const resultsRect = results ? results.getBoundingClientRect() : null;
-        const footerRect = footer ? footer.getBoundingClientRect() : null;
         return {
           innerWidth,
           innerHeight,
@@ -355,8 +352,6 @@ async function readPopupState(root, sessionId) {
           shellHeight: shellRect ? shellRect.height : 0,
           shellBottom: shellRect ? shellRect.bottom : 0,
           resultsBottom: resultsRect ? resultsRect.bottom : 0,
-          footerTop: footerRect ? footerRect.top : 0,
-          footerBottom: footerRect ? footerRect.bottom : 0,
           firstCardWidth: cardRect ? cardRect.width : 0,
           visibleCardCount: [...document.querySelectorAll("a.market-card")]
             .filter((card) => {
@@ -445,49 +440,71 @@ async function capturePopupScreenshot(root, sessionId, prefix) {
   return path.relative(path.join(__dirname, ".."), file);
 }
 
-async function clickFirstPopupCard(root, sessionId, source = "Polymarket", options = {}) {
-  const sourceSelector = source
-    ? `a.market-card[data-market-source="${source.replace(/"/g, "\\\"")}"]`
-    : "";
-  const fallbackSelector = options.allowFallback === false ? "null" : "document.querySelector(\"a.market-card\")";
-  const card = await evaluatePopup(root, sessionId, `(() => {
-    const node = ${sourceSelector ? `document.querySelector(${JSON.stringify(sourceSelector)}) ||` : ""} ${fallbackSelector};
-    if (!node) {
-      return null;
-    }
-    node.scrollIntoView({ block: "center", inline: "center" });
-    const rect = node.getBoundingClientRect();
-    return {
-      href: node.dataset.marketUrl || node.href,
-      x: rect.left + (rect.width / 2),
-      y: rect.top + (rect.height / 2)
-    };
-  })()`);
-
-  if (!card || !card.href) {
-    throw new Error(`The popup did not render a clickable ${source || "venue"} market card.`);
-  }
-
+async function clickPopupPoint(root, sessionId, point) {
   await sendToTarget(root, sessionId, "Input.dispatchMouseEvent", {
     type: "mouseMoved",
-    x: card.x,
-    y: card.y,
+    x: point.x,
+    y: point.y,
     button: "none"
   });
   await sendToTarget(root, sessionId, "Input.dispatchMouseEvent", {
     type: "mousePressed",
-    x: card.x,
-    y: card.y,
+    x: point.x,
+    y: point.y,
     button: "left",
     clickCount: 1
   });
   await sendToTarget(root, sessionId, "Input.dispatchMouseEvent", {
     type: "mouseReleased",
-    x: card.x,
-    y: card.y,
+    x: point.x,
+    y: point.y,
     button: "left",
     clickCount: 1
   });
+}
+
+async function clickFirstPopupCard(root, sessionId, source = "Polymarket", options = {}) {
+  const sourceSelector = source
+    ? `a.market-card[data-market-source="${source.replace(/"/g, "\\\"")}"]`
+    : "";
+  const fallbackSelector = options.allowFallback === false ? "null" : "document.querySelector(\"a.market-card\")";
+  const readTargetScript = `(() => {
+    const node = ${sourceSelector ? `document.querySelector(${JSON.stringify(sourceSelector)}) ||` : ""} ${fallbackSelector};
+    if (!node) {
+      return null;
+    }
+    node.scrollIntoView({ block: "center", inline: "center" });
+    const cardRect = node.getBoundingClientRect();
+    const row = node.classList.contains("market-card-expanded")
+      ? node.querySelector("[data-market-row-key]")
+      : null;
+    const rowRect = row ? row.getBoundingClientRect() : null;
+    return {
+      href: node.dataset.marketUrl || node.href,
+      expanded: node.classList.contains("market-card-expanded"),
+      cardX: cardRect.left + (cardRect.width / 2),
+      cardY: cardRect.top + Math.min(cardRect.height - 10, Math.max(12, cardRect.height * 0.42)),
+      rowX: rowRect ? rowRect.left + (rowRect.width / 2) : 0,
+      rowY: rowRect ? rowRect.top + (rowRect.height / 2) : 0
+    };
+  })()`;
+  let card = await evaluatePopup(root, sessionId, readTargetScript);
+
+  if (!card || !card.href) {
+    throw new Error(`The popup did not render a clickable ${source || "venue"} market card.`);
+  }
+
+  if (!card.expanded) {
+    await clickPopupPoint(root, sessionId, { x: card.cardX, y: card.cardY });
+    await delay(100);
+    card = await evaluatePopup(root, sessionId, readTargetScript);
+  }
+
+  if (!card || !card.rowX || !card.rowY) {
+    throw new Error(`The popup did not render a trade row for the ${source || "venue"} market card.`);
+  }
+
+  await clickPopupPoint(root, sessionId, { x: card.rowX, y: card.rowY });
 
   return card.href;
 }
@@ -498,6 +515,7 @@ async function clickPopupSelector(root, sessionId, selector) {
     if (!node) {
       return null;
     }
+    node.scrollIntoView({ block: "center", inline: "center" });
     const rect = node.getBoundingClientRect();
     return {
       x: rect.left + (rect.width / 2),
@@ -545,103 +563,6 @@ async function ensurePopupMenuOpen(root, sessionId) {
   })()`);
 }
 
-async function waitForExpandedFinalState(page) {
-  await page.waitForFunction(() => {
-    const status = document.querySelector("#status-region .scan-status");
-    return status && ["complete", "error"].includes(status.dataset.phase);
-  }, { timeout: 45000 });
-  await page.waitForFunction(() => {
-    const images = [...document.querySelectorAll("img.market-image")];
-    return images.length === 0 || images.every((image) => image.complete && image.naturalWidth > 0);
-  }, { timeout: 10000 }).catch(() => {});
-}
-
-async function readExpandedPageState(page) {
-  return page.evaluate(() => {
-    const shell = document.querySelector(".popup-shell");
-    const results = document.querySelector("#results-region");
-    const footer = document.querySelector(".privacy-footer");
-    const shellRect = shell ? shell.getBoundingClientRect() : null;
-    const resultsRect = results ? results.getBoundingClientRect() : null;
-    const footerRect = footer ? footer.getBoundingClientRect() : null;
-    return {
-      url: location.href,
-      phase: document.querySelector("#status-region .scan-status")?.dataset.phase || "",
-      finalStatus: document.querySelector("#status-region")?.innerText.replace(/\s+/g, " ").trim() || "",
-      emptyText: document.querySelector(".empty-state")?.innerText.replace(/\s+/g, " ").trim() || "",
-      errorText: document.querySelector(".error-state")?.innerText.replace(/\s+/g, " ").trim() || "",
-      cardLinks: [...document.querySelectorAll("a.market-card")].map((card) => card.dataset.marketUrl || card.href),
-      cardTitles: [...document.querySelectorAll("a.market-card .market-title, a.market-card .event-parent-title")].map((node) => node.textContent),
-      visual: {
-        articlePreviewCount: document.querySelectorAll(".article-context").length,
-        fallbackIconCount: document.querySelectorAll(".market-card .market-image-fallback").length,
-        remoteImageCount: document.querySelectorAll(".market-card img.market-image").length,
-        loadedRemoteImageCount: [...document.querySelectorAll(".market-card img.market-image")].filter((image) => image.complete && image.naturalWidth > 0).length,
-        traderMetaCount: [...document.querySelectorAll(".market-meta-item")].filter((node) => /traders/i.test(node.textContent || "")).length,
-        volumeMetaCount: [...document.querySelectorAll(".market-meta-item")].filter((node) => /volume/i.test(node.textContent || "")).length,
-        metaText: [...document.querySelectorAll(".market-meta-row")].map((node) => node.textContent.replace(/\s+/g, " ").trim()),
-        brandDividerWidth: parseFloat(getComputedStyle(document.querySelector(".brand-lockup > div") || document.body).borderLeftWidth) || 0,
-        tabCount: document.querySelectorAll(".tab-button").length,
-        hiddenUtilityTabStopCount: [...document.querySelectorAll(".utility-control input, .utility-control button, .utility-control a, .utility-control select, .utility-control textarea")]
-          .filter((node) => node.tabIndex >= 0).length,
-        scoreBadgeCount: document.querySelectorAll(".market-score").length,
-        openLinkCount: document.querySelectorAll(".open-link").length,
-        searchHeight: document.querySelector(".market-search")?.getBoundingClientRect().height || 0,
-        privacyText: document.querySelector(".privacy-footer")?.textContent.replace(/\s+/g, " ").trim() || "",
-        surfaceText: document.querySelector("#surface-message:not([hidden])")?.textContent.replace(/\s+/g, " ").trim() || "",
-        activeTabText: document.querySelector(".tab-button.is-active")?.textContent.trim() || "",
-        activeElementId: document.activeElement?.id || "",
-        tradeToggleCount: document.querySelectorAll(".trade-toggle").length,
-        tradePressed: document.querySelector("#trade-toggle-button")?.getAttribute("aria-pressed") || "",
-        menuButtonCount: document.querySelectorAll(".menu-button").length,
-        menuOpen: document.querySelector(".popup-shell")?.classList.contains("is-menu-open") || false,
-        menuExpanded: document.querySelector("#menu-button")?.getAttribute("aria-expanded") || "",
-        actionMenuItemCount: document.querySelectorAll(".action-menu-item").length,
-        sourceBadgeCount: document.querySelectorAll(".source-badge").length,
-        sourcePolymarketCount: document.querySelectorAll(".source-badge.source-polymarket").length,
-        sourceHyperliquidCount: document.querySelectorAll(".source-badge.source-hyperliquid").length,
-        sourceBadgeLabels: [...document.querySelectorAll(".source-badge")].map((badge) => badge.getAttribute("aria-label") || badge.textContent.trim()),
-        tradeViewCount: document.querySelectorAll(".trade-view").length,
-        tradeViewTitle: document.querySelector(".trade-hero h2")?.textContent.trim() || "",
-        tradeMarketSource: document.querySelector(".trade-view .source-badge")?.getAttribute("aria-label") || "",
-        tradeBuyText: document.querySelector(".trade-buy-button")?.textContent.trim() || "",
-        tradeOrderBookRows: document.querySelectorAll(".trade-book-row").length,
-        tradeBackButtonCount: document.querySelectorAll("[data-trade-back]").length,
-        tradeAmountValue: document.querySelector("[data-trade-amount]")?.value || "",
-        tradeEstimateText: document.querySelector("[data-trade-estimate]")?.textContent.trim() || "",
-        tradeActiveRange: document.querySelector(".trade-range-button.is-active")?.textContent.trim() || "",
-        tradeChartDate: document.querySelector(".trade-chart-date")?.textContent.trim() || "",
-        tradeChartPath: document.querySelector(".trade-chart-line")?.getAttribute("d") || "",
-        tradeActiveSide: document.querySelector(".trade-side-button.is-active")?.dataset.tradeSide || "",
-        tradeActionOpen: Boolean(document.querySelector("[data-trade-actions]:not([hidden])")),
-        tradeActionCount: document.querySelectorAll("[data-trade-action]").length,
-        scenarioRowCount: document.querySelectorAll(".market-scenario-row").length,
-        expandedCardCount: document.querySelectorAll(".market-card-expanded").length
-      },
-      layout: {
-        innerWidth,
-        innerHeight,
-        bodyWidth: document.body.getBoundingClientRect().width,
-        bodyHeight: document.body.getBoundingClientRect().height,
-        shellWidth: shellRect ? shellRect.width : 0,
-        shellHeight: shellRect ? shellRect.height : 0,
-        resultsBottom: resultsRect ? resultsRect.bottom : 0,
-        footerTop: footerRect ? footerRect.top : 0,
-        footerBottom: footerRect ? footerRect.bottom : 0,
-        shellBottom: shellRect ? shellRect.bottom : 0,
-        visibleCardCount: [...document.querySelectorAll("a.market-card")]
-          .filter((card) => {
-            if (!resultsRect) {
-              return false;
-            }
-            const rect = card.getBoundingClientRect();
-            return rect.top >= resultsRect.top - 1 && rect.bottom <= resultsRect.bottom + 1;
-          }).length
-      }
-    };
-  });
-}
-
 function isSupportedVenueHost(hostname) {
   return [
     "polymarket.com",
@@ -666,7 +587,8 @@ function assertSupportedVenueLinks(cardLinks, label) {
 
 function validateExpandedState(expandedState, report, label = "Larger view") {
   const finalStatus = expandedState.finalStatus || expandedState.statusText || "";
-  if (!expandedState.url.includes("/src/popup/popup.html?expanded=1&sourceTabId=")) {
+  const stateUrl = new URL(expandedState.url);
+  if (!stateUrl.pathname.endsWith("/src/popup/popup.html")) {
     throw new Error(`${label} opened the wrong extension URL: ${expandedState.url}`);
   }
   if (expandedState.phase === "error") {
@@ -680,13 +602,12 @@ function validateExpandedState(expandedState, report, label = "Larger view") {
   }
   if (
     expandedState.layout.innerWidth < 480 ||
-    expandedState.layout.innerHeight < 760 ||
+    expandedState.layout.innerHeight < 500 ||
     expandedState.layout.bodyWidth < 480 ||
     expandedState.layout.shellWidth < 450 ||
-    expandedState.layout.shellHeight < 810 ||
-    expandedState.layout.shellHeight > 820 ||
-    expandedState.layout.footerBottom > expandedState.layout.shellBottom + 1 ||
-    expandedState.layout.resultsBottom > expandedState.layout.footerTop + 1 ||
+    expandedState.layout.shellHeight < 450 ||
+    expandedState.layout.shellHeight > 850 ||
+    expandedState.layout.resultsBottom > expandedState.layout.shellBottom + 1 ||
     (expandedState.cardLinks.length >= 4 && expandedState.layout.visibleCardCount < 3) ||
     (expandedState.cardLinks.length === 3 && expandedState.layout.visibleCardCount < 3)
   ) {
@@ -696,30 +617,32 @@ function validateExpandedState(expandedState, report, label = "Larger view") {
     throw new Error(`${label} repeated article preview content.`);
   }
   if (
-    expandedState.visual.tradeToggleCount !== 1 ||
-    expandedState.visual.menuOpen !== true ||
-    expandedState.visual.menuExpanded !== "true" ||
+    expandedState.visual.tradeToggleCount !== 0 ||
+    expandedState.visual.menuOpen !== false ||
+    expandedState.visual.menuExpanded !== "false" ||
     expandedState.visual.menuButtonCount !== 1 ||
-    expandedState.visual.actionMenuItemCount !== 3 ||
+    expandedState.visual.actionMenuItemCount !== 4 ||
+    expandedState.visual.footerCount !== 0 ||
     expandedState.visual.hiddenUtilityTabStopCount !== 0 ||
     expandedState.visual.scoreBadgeCount !== 0 ||
     expandedState.visual.openLinkCount !== 0 ||
     (expandedState.cardLinks.length > 0 && (
       expandedState.visual.sourceBadgeCount !== expandedState.cardLinks.length ||
       expandedState.visual.sourcePolymarketCount + expandedState.visual.sourceHyperliquidCount !== expandedState.cardLinks.length ||
-      expandedState.visual.expandedCardCount !== 1 ||
-      expandedState.visual.scenarioRowCount === 0
+      expandedState.visual.expandedCardCount !== 0 ||
+      expandedState.visual.scenarioRowCount !== 0
     ))
   ) {
     throw new Error(`${label} missing target visual structure: ${JSON.stringify(expandedState.visual)}`);
   }
+  const displayGroupsWithImages = (report.displayGroups || []).filter((group) => group && group.image).length;
   if (expandedState.cardLinks.length > 0 && (
     expandedState.visual.remoteImageCount + expandedState.visual.fallbackIconCount !== expandedState.cardLinks.length ||
-    expandedState.visual.remoteImageCount === 0 ||
-    expandedState.visual.loadedRemoteImageCount === 0 ||
+    (displayGroupsWithImages > 0 && expandedState.visual.remoteImageCount === 0) ||
+    (displayGroupsWithImages > 0 && expandedState.visual.loadedRemoteImageCount === 0) ||
     expandedState.visual.loadedRemoteImageCount !== expandedState.visual.remoteImageCount
   )) {
-    throw new Error(`${label} did not use loaded Polymarket images: ${JSON.stringify(expandedState.visual)}`);
+    throw new Error(`${label} did not render the expected market images or fallback icons: ${JSON.stringify(expandedState.visual)}`);
   }
   if (
     expandedState.visual.traderMetaCount !== 0 ||
@@ -728,67 +651,51 @@ function validateExpandedState(expandedState, report, label = "Larger view") {
   ) {
     throw new Error(`${label} rendered removed trader/volume metadata: ${JSON.stringify(expandedState.visual)}`);
   }
-  if (expandedState.visual.activeTabText !== "Related") {
+  if (expandedState.visual.activeTabText !== "Relevant Markets") {
     throw new Error(`${label} active tab drifted from target: ${expandedState.visual.activeTabText}`);
-  }
-  if (!/Insights by Rainbow\s+Updated just now/.test(expandedState.visual.privacyText)) {
-    throw new Error(`${label} missing target Rainbow footer copy: ${expandedState.visual.privacyText}`);
   }
 }
 
-async function verifyExpandedPopup({
-  context,
+async function verifyAnchoredPopupSettings({
   root,
   popupSessionId,
+  extensionId,
   captureArtifacts,
   report
 }) {
-  const expandedPagePromise = context.waitForEvent("page", { timeout: 15000 }).then(
-    (page) => ({ page }),
-    (error) => ({ error })
-  );
-
+  const popupPrefix = `chrome-extension://${extensionId}/src/popup/popup.html`;
+  const beforeTargets = await root.send("Target.getTargets");
+  const beforePopupIds = new Set(beforeTargets.targetInfos
+    .filter((target) => target.url === popupPrefix || target.url.startsWith(`${popupPrefix}?`))
+    .map((target) => target.targetId));
   await ensurePopupMenuOpen(root, popupSessionId);
   await clickPopupSelector(root, popupSessionId, "#settings-button");
-  const expandedPageResult = await expandedPagePromise;
-  if (expandedPageResult.error) {
-    throw new Error(`Opening the larger extension view did not create a popup window: ${expandedPageResult.error.message}`);
+  const settingsState = await waitForPopupCondition(
+    root,
+    popupSessionId,
+    (state) => /Settings/i.test(state.visual.surfaceText) && /Read-only matching/i.test(state.visual.surfaceText),
+    "anchored popup settings surface"
+  );
+  await delay(500);
+  const afterTargets = await root.send("Target.getTargets");
+  const newPopupTargets = afterTargets.targetInfos.filter((target) => (
+    (target.url === popupPrefix || target.url.startsWith(`${popupPrefix}?`)) &&
+    !beforePopupIds.has(target.targetId)
+  ));
+  if (newPopupTargets.length) {
+    throw new Error(`Settings opened a separate extension target instead of staying anchored: ${JSON.stringify(newPopupTargets.map((target) => target.url))}`);
   }
 
-  const expandedPage = expandedPageResult.page;
-  try {
-    await expandedPage.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
-    await waitForExpandedFinalState(expandedPage);
-    const expandedState = await readExpandedPageState(expandedPage);
-    const expandedScreenshot = captureArtifacts
-      ? artifactPath("browser-smoke-expanded-popup", "png")
-      : "";
-    if (expandedScreenshot) {
-      await expandedPage.locator(".popup-shell").screenshot({ path: expandedScreenshot });
-    }
-
-    report.expandedPopup = {
-      ...expandedState,
-      screenshot: expandedScreenshot ? path.relative(path.join(__dirname, ".."), expandedScreenshot) : ""
-    };
-
-    for (const href of expandedState.cardLinks) {
-      const url = new URL(href);
-      if (url.protocol !== "https:" || !isSupportedVenueHost(url.hostname)) {
-        throw new Error(`Invalid venue link rendered in larger view: ${href}`);
-      }
-    }
-
-    validateExpandedState(expandedState, report);
-
-    await expandedPage.click("#settings-button");
-    await expandedPage.waitForFunction(() => /Settings/i.test(document.querySelector("#surface-message:not([hidden])")?.textContent || ""), null, { timeout: 5000 });
-    report.expandedPopup.settingsSurface = await expandedPage.evaluate(() => (
-      document.querySelector("#surface-message:not([hidden])")?.textContent.replace(/\s+/g, " ").trim() || ""
-    ));
-  } finally {
-    await expandedPage.close().catch(() => {});
-  }
+  const screenshot = captureArtifacts
+    ? await capturePopupScreenshot(root, popupSessionId, "browser-smoke-anchored-popup")
+    : "";
+  report.expandedPopup = {
+    ...settingsState,
+    finalStatus: settingsState.statusText,
+    screenshot,
+    settingsSurface: settingsState.visual.surfaceText
+  };
+  validateExpandedState(settingsState, report, "Anchored action popup");
 }
 
 async function verifyPopupInteractions({
@@ -808,8 +715,6 @@ async function verifyPopupInteractions({
     menuEscape: null,
     menuOutside: null,
     footerInfo: null,
-    tradeToggle: null,
-    tradeToggleOff: null,
     refresh: null
   };
 
@@ -847,12 +752,12 @@ async function verifyPopupInteractions({
   await waitForPopupCondition(
     root,
     popupSessionId,
-    (state) => state.visual.activeTabText === "Search" && /Search complete/i.test(state.visual.statusText),
+    (state) => state.visual.activeTabText === "" && /Search complete/i.test(state.visual.statusText),
     "market search complete"
   );
   await waitForPopupImages(root, popupSessionId);
   const searchFinal = await readPopupState(root, popupSessionId);
-  assertSupportedVenueLinks(searchFinal.cardLinks, "Search tab");
+  assertSupportedVenueLinks(searchFinal.cardLinks, "Search flow");
   report.interactionChecks.search = {
     status: searchFinal.visual.statusText,
     cardCount: searchFinal.cardLinks.length,
@@ -860,7 +765,7 @@ async function verifyPopupInteractions({
     loadedRemoteImageCount: searchFinal.visual.loadedRemoteImageCount
   };
   if (searchFinal.visual.articlePreviewCount !== 0) {
-    throw new Error(`Search tab repeated article preview content: ${JSON.stringify(searchFinal.visual)}`);
+    throw new Error(`Search flow repeated article preview content: ${JSON.stringify(searchFinal.visual)}`);
   }
 
   await evaluatePopup(root, popupSessionId, `(() => {
@@ -870,7 +775,7 @@ async function verifyPopupInteractions({
   const relatedState = await waitForPopupCondition(
     root,
     popupSessionId,
-    (state) => state.visual.activeTabText === "Related" && /Local scan complete/i.test(state.visual.statusText),
+    (state) => state.visual.activeTabText === "Relevant Markets" && /Local scan complete/i.test(state.visual.statusText),
     "related tab restored"
   );
   report.interactionChecks.relatedRestore = {
@@ -886,7 +791,7 @@ async function verifyPopupInteractions({
     const sortedState = await waitForPopupCondition(
       root,
       popupSessionId,
-      (state) => state.visual.activeTabText === "Related" && state.visual.sortLabel === "Volume",
+      (state) => state.visual.activeTabText === "Relevant Markets" && state.visual.sortLabel === "Volume",
       "sort control changed to volume"
     );
     report.interactionChecks.sort = {
@@ -918,7 +823,7 @@ async function verifyPopupInteractions({
   const menuOpenState = await waitForPopupCondition(
     root,
     popupSessionId,
-    (state) => state.visual.menuOpen && state.visual.menuExpanded === "true" && state.visual.activeElementId === "settings-button",
+    (state) => state.visual.menuOpen && state.visual.menuExpanded === "true" && state.visual.activeElementId === "profile-button",
     "menu opened"
   );
   report.interactionChecks.menuOpen = {
@@ -944,7 +849,7 @@ async function verifyPopupInteractions({
   const menuArrowState = await waitForPopupCondition(
     root,
     popupSessionId,
-    (state) => state.visual.menuOpen && state.visual.activeElementId === "refresh-button",
+    (state) => state.visual.menuOpen && state.visual.activeElementId === "settings-button",
     "menu arrow navigation"
   );
   report.interactionChecks.menuArrow = {
@@ -1008,7 +913,7 @@ async function verifyPopupInteractions({
     (state) => state.visual.menuOpen && state.visual.menuExpanded === "true",
     "menu reopened before outside click"
   );
-  await clickPopupSelector(root, popupSessionId, ".hero-region h1");
+  await clickPopupSelector(root, popupSessionId, "#market-search-input");
   const menuOutsideState = await waitForPopupCondition(
     root,
     popupSessionId,
@@ -1039,38 +944,12 @@ async function verifyPopupInteractions({
     surface: footerState.visual.surfaceText
   };
 
-  await clickPopupSelector(root, popupSessionId, "#trade-toggle-button");
-  const tradeState = await waitForPopupCondition(
-    root,
-    popupSessionId,
-    (state) => /Trade mode on/i.test(state.visual.surfaceText) && state.visual.tradePressed === "true",
-    "trade toggle status"
-  );
-  report.interactionChecks.tradeToggle = {
-    status: tradeState.visual.statusText,
-    surface: tradeState.visual.surfaceText,
-    pressed: tradeState.visual.tradePressed
-  };
-
-  await clickPopupSelector(root, popupSessionId, "#trade-toggle-button");
-  const tradeOffState = await waitForPopupCondition(
-    root,
-    popupSessionId,
-    (state) => /Trade mode off/i.test(state.visual.surfaceText) && state.visual.tradePressed === "false",
-    "trade toggle off status"
-  );
-  report.interactionChecks.tradeToggleOff = {
-    status: tradeOffState.visual.statusText,
-    surface: tradeOffState.visual.surfaceText,
-    pressed: tradeOffState.visual.tradePressed
-  };
-
   await ensurePopupMenuOpen(root, popupSessionId);
   await clickPopupSelector(root, popupSessionId, "#refresh-button");
   const refreshedState = await waitForPopupCondition(
     root,
     popupSessionId,
-    (state) => state.visual.activeTabText === "Related" && /Local scan complete|No readable article/i.test(state.visual.statusText),
+    (state) => state.visual.activeTabText === "Relevant Markets" && /Local scan complete|No readable article/i.test(state.visual.statusText),
     "refresh complete"
   );
   report.interactionChecks.refresh = {
@@ -1235,12 +1114,12 @@ async function runActionPopupSmoke({
     if (
       !report.popupLayout ||
       report.popupLayout.innerWidth < 320 ||
+      report.popupLayout.innerHeight < 500 ||
       report.popupLayout.bodyWidth < 320 ||
       report.popupLayout.documentWidth < 320 ||
       report.popupLayout.shellWidth < 320 ||
-      report.popupLayout.shellHeight < 580 ||
-      report.popupLayout.footerBottom > report.popupLayout.shellBottom + 1 ||
-      report.popupLayout.resultsBottom > report.popupLayout.footerTop + 1 ||
+      report.popupLayout.shellHeight < 450 ||
+      report.popupLayout.resultsBottom > report.popupLayout.shellBottom + 1 ||
       (report.cardLinks.length > 0 && report.popupLayout.firstCardWidth < 300) ||
       (report.cardLinks.length >= 2 && report.popupLayout.visibleCardCount < 2)
     ) {
@@ -1251,19 +1130,20 @@ async function runActionPopupSmoke({
       throw new Error("Extension popup repeated article preview content.");
     }
     if (
-      report.visual.tradeToggleCount !== 1 ||
-      report.visual.menuOpen !== true ||
-      report.visual.menuExpanded !== "true" ||
+      report.visual.tradeToggleCount !== 0 ||
+      report.visual.menuOpen !== false ||
+      report.visual.menuExpanded !== "false" ||
       report.visual.menuButtonCount !== 1 ||
-      report.visual.actionMenuItemCount !== 3 ||
+      report.visual.actionMenuItemCount !== 4 ||
+      report.visual.footerCount !== 0 ||
       report.visual.hiddenUtilityTabStopCount !== 0 ||
       report.visual.scoreBadgeCount !== 0 ||
       report.visual.openLinkCount !== 0 ||
       (report.cardLinks.length > 0 && (
         report.visual.sourceBadgeCount !== report.cardLinks.length ||
         report.visual.sourcePolymarketCount + report.visual.sourceHyperliquidCount !== report.cardLinks.length ||
-        report.visual.expandedCardCount !== 1 ||
-        report.visual.scenarioRowCount === 0 ||
+        report.visual.expandedCardCount !== 0 ||
+        report.visual.scenarioRowCount !== 0 ||
         report.visual.expandedSourceLabelRowOverlap
       ))
     ) {
@@ -1282,14 +1162,11 @@ async function runActionPopupSmoke({
     )) {
       throw new Error(`Extension popup card surface drifted from target visuals: ${JSON.stringify(report.visual)}`);
     }
-    if (report.cardLinks.length > 0 && report.visual.activeTabText !== "Related") {
+    if (report.cardLinks.length > 0 && report.visual.activeTabText !== "Relevant Markets") {
       throw new Error(`Extension popup active tab drifted from target: ${report.visual.activeTabText}`);
     }
     if (report.visual.decisionTextCount !== 0) {
       throw new Error(`Extension popup still contains the removed decision/high-confidence surface: ${JSON.stringify(report.visual)}`);
-    }
-    if (!/Insights by Rainbow\s+Updated just now/.test(report.visual.privacyText)) {
-      throw new Error(`Extension popup missing target Rainbow footer copy: ${report.visual.privacyText}`);
     }
     if (report.cardLinks.length > 0 && !/Local scan complete/.test(report.visual.statusText)) {
       throw new Error(`Extension popup missing target local scan copy: ${report.visual.statusText}`);
@@ -1311,20 +1188,13 @@ async function runActionPopupSmoke({
     }
 
     if (verifyExpanded) {
-      if (!skipClicks) {
-        throw new Error("The expanded-popup smoke must be run with --skip-clicks because opening a second extension window closes the action popup.");
-      }
-      if (popupState.expanded) {
-        validateExpandedState(report.expandedPopup, report, "Primary extension view");
-      } else {
-        await verifyExpandedPopup({
-          context,
-          root,
-          popupSessionId,
-          captureArtifacts,
-          report
-        });
-      }
+      await verifyAnchoredPopupSettings({
+        root,
+        popupSessionId,
+        extensionId: report.extensionId,
+        captureArtifacts,
+        report
+      });
     }
 
     if (skipClicks) {
@@ -1357,7 +1227,7 @@ async function runActionPopupSmoke({
           state.visual.tradeBackButtonCount === 1 &&
           state.visual.tradeOrderBookRows >= 10 &&
           /^Buy\s+/.test(state.visual.tradeBuyText),
-        "card click trade view"
+        "date row click trade view"
       );
       await waitForPopupImages(root, popupSessionId);
       const tradeScreenshot = captureArtifacts
@@ -1449,7 +1319,7 @@ async function runActionPopupSmoke({
         screenshot: tradeScreenshot
       };
       report.openedLinkChecks.push({
-        method: "popup-card-click",
+        method: "popup-date-row-click",
         ...report.clickedLinkCheck
       });
 
@@ -1462,7 +1332,7 @@ async function runActionPopupSmoke({
             state.visual.tradeMarketSource === "Hyperliquid" &&
             /^Buy\s+Long/.test(state.visual.tradeBuyText) &&
             /Est\. contracts:/.test(state.visual.tradeEstimateText),
-          "Hyperliquid card click trade view"
+          "Hyperliquid row click trade view"
         );
         await clickPopupSelector(root, popupSessionId, "[data-trade-side='no']");
         const hyperliquidSideState = await waitForPopupCondition(
@@ -1489,7 +1359,7 @@ async function runActionPopupSmoke({
           estimate: hyperliquidState.visual.tradeEstimateText
         };
         report.openedLinkChecks.push({
-          method: "hyperliquid-card-click",
+          method: "hyperliquid-row-click",
           ...report.hyperliquidTradeCheck
         });
       }
@@ -1606,7 +1476,7 @@ async function main() {
     console.log(`Refresh: ${result.interactionChecks.refresh.status.replace(/\s+/g, " ")}`);
   }
   if (result.expandedPopup) {
-    console.log(`Expanded view: ${result.expandedPopup.layout.shellWidth}x${result.expandedPopup.layout.shellHeight} shell, ${result.expandedPopup.layout.visibleCardCount} full card(s) visible, screenshot ${result.expandedPopup.screenshot}`);
+    console.log(`Anchored popup: ${result.expandedPopup.layout.shellWidth}x${result.expandedPopup.layout.shellHeight} shell, ${result.expandedPopup.layout.visibleCardCount} full card(s) visible, screenshot ${result.expandedPopup.screenshot}`);
   }
   if (visualReport) {
     console.log(`Visual reference comparison passed:\n${visualReport}`);

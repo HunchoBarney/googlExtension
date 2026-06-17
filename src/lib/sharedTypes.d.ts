@@ -239,6 +239,7 @@ export interface PMMarketCandidate {
   eventSlug?: string;
   title?: string;
   eventTitle?: string;
+  groupItemTitle?: string;
   description?: string;
   category?: string;
   tags?: string[];
@@ -290,6 +291,7 @@ export interface PMMarketGroup {
   eventSlug?: string;
   title?: string;
   eventTitle?: string;
+  groupItemTitle?: string;
   type?: string;
   coin?: string;
   symbol?: string;

@@ -19,23 +19,23 @@
   const surfaceMessage = document.getElementById("surface-message");
   const resultsRegion = document.getElementById("results-region");
   const refreshButton = document.getElementById("refresh-button");
+  const profileButton = document.getElementById("profile-button");
   const settingsButton = document.getElementById("settings-button");
   const privacyInfoButton = document.getElementById("privacy-info-button");
   const menuButton = document.getElementById("menu-button");
   const actionMenu = document.getElementById("action-menu");
-  const tradeToggleButton = document.getElementById("trade-toggle-button");
   const searchForm = document.getElementById("market-search-form");
   const searchInput = document.getElementById("market-search-input");
   const searchButton = document.getElementById("market-search-button");
   const relatedTab = document.getElementById("related-tab");
   const trendingTab = document.getElementById("trending-tab");
-  const searchTab = document.getElementById("search-tab");
+  const watchlistTab = document.getElementById("watchlist-tab");
   const renderer = global.PMRender;
   const signals = global.PMArticleSignals;
   const polymarket = global.PMPolymarket;
   const hyperliquid = global.PMHyperliquid || null;
   const params = new URLSearchParams(global.location.search || "");
-  const expandedMode = params.get("expanded") === "1";
+  const expandedMode = params.get("expanded") !== "0";
   const sourceTabId = Number(params.get("sourceTabId"));
   if (expandedMode) {
     document.documentElement.dataset.viewMode = "expanded";
@@ -52,9 +52,15 @@
   let latestRenderedGroups = [];
   let latestRenderOptions = { title: "Related markets" };
   let latestTradeCandidate = null;
+  let expandedMarketKey;
+  let expandedRowKeys = new Set();
   let sortModeIndex = 0;
   let relatedScrollObserver = null;
   let surfaceMessageTimer = null;
+  let headerAnimationFrame = 0;
+  let topbarExpandedHeight = 0;
+  let heroExpandedHeight = 0;
+  const HERO_COLLAPSE_FALLBACK_HEIGHT = 48;
 
   function setControlsDisabled(disabled) {
     refreshButton.disabled = disabled;
@@ -66,9 +72,6 @@
     if (privacyInfoButton) {
       privacyInfoButton.disabled = disabled;
     }
-    if (tradeToggleButton) {
-      tradeToggleButton.disabled = disabled;
-    }
   }
 
   function renderStatus(phase, title, detail) {
@@ -77,16 +80,153 @@
     renderer.renderStatus(statusRegion, phase, title, detail);
   }
 
+  function renderLoading() {
+    if (renderer.renderLoading) {
+      renderer.renderLoading(resultsRegion, "Finding related markets");
+    }
+  }
+
+  function manifestDefaultPopup() {
+    const chromeApi = global.chrome || (typeof chrome !== "undefined" ? chrome : null);
+    try {
+      return chromeApi &&
+        chromeApi.runtime &&
+        typeof chromeApi.runtime.getManifest === "function"
+        ? chromeApi.runtime.getManifest().action?.default_popup || ""
+        : "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function reloadStaleDetachedLauncher() {
+    const chromeApi = global.chrome || (typeof chrome !== "undefined" ? chrome : null);
+    const runtime = chromeApi && chromeApi.runtime;
+    const openedByLegacyLauncher = params.get("expanded") === "1" && params.has("sourceTabId");
+    if (
+      !openedByLegacyLauncher ||
+      manifestDefaultPopup() === "src/popup/popup.html" ||
+      !runtime ||
+      typeof runtime.reload !== "function"
+    ) {
+      return false;
+    }
+
+    renderStatus("reading", "Updating popup", "Reloading the toolbar popup.");
+    if (renderer.renderLoading) {
+      renderer.renderLoading(resultsRegion, "Updating popup");
+    }
+    global.setTimeout(() => runtime.reload(), 100);
+    return true;
+  }
+
+  if (reloadStaleDetachedLauncher()) {
+    return;
+  }
+
   function shellElement() {
     return document.querySelector(".popup-shell");
   }
 
-  function setTradeViewOpen(open) {
+  function heroRegionElement() {
+    return document.querySelector(".hero-region");
+  }
+
+  function topbarElement() {
+    return document.querySelector(".rainbow-topbar");
+  }
+
+  function measureExpandedHeight(element, cachedHeight, fallbackHeight) {
+    if (cachedHeight > 0) {
+      return cachedHeight;
+    }
+    const measured = Math.round(Math.max(
+      element.scrollHeight || 0,
+      element.getBoundingClientRect ? element.getBoundingClientRect().height : 0,
+      fallbackHeight
+    ));
+    return measured || fallbackHeight;
+  }
+
+  function measureTopbarExpandedHeight(topbar) {
+    topbarExpandedHeight = measureExpandedHeight(topbar, topbarExpandedHeight, HERO_COLLAPSE_FALLBACK_HEIGHT);
+    return topbarExpandedHeight;
+  }
+
+  function measureHeroExpandedHeight(hero) {
+    heroExpandedHeight = measureExpandedHeight(hero, heroExpandedHeight, HERO_COLLAPSE_FALLBACK_HEIGHT);
+    return heroExpandedHeight;
+  }
+
+  function applyCollapseState(element, prefix, expandedHeight, easedProgress, rawProgress) {
+    const height = rawProgress >= 1 ? 0 : Math.max(0, Math.round(expandedHeight * (1 - easedProgress)));
+    const opacity = rawProgress >= 1 ? 0 : Math.max(0, Math.round((1 - easedProgress) * 1000) / 1000);
+    const translateY = Math.round(-18 * easedProgress * 1000) / 1000;
+
+    element.style.setProperty(`--${prefix}-height`, `${height}px`);
+    element.style.setProperty(`--${prefix}-open`, String(opacity));
+    element.style.setProperty(`--${prefix}-opacity`, String(opacity));
+    element.style.setProperty(`--${prefix}-translate-y`, `${translateY}px`);
+  }
+
+  function updateHeaderCollapse() {
+    const shell = shellElement();
+    const topbar = topbarElement();
+    const hero = heroRegionElement();
+    if (!shell || !topbar || !hero || !resultsRegion) {
+      return;
+    }
+
+    const topbarHeight = measureTopbarExpandedHeight(topbar);
+    const expandedHeight = measureHeroExpandedHeight(hero);
+    const collapseRange = Math.max(topbarHeight, expandedHeight, HERO_COLLAPSE_FALLBACK_HEIGHT);
+    const rawProgress = Math.min(1, Math.max(0, (resultsRegion.scrollTop || 0) / collapseRange));
+    const easedProgress = rawProgress * rawProgress * (3 - (2 * rawProgress));
+
+    applyCollapseState(topbar, "topbar", topbarHeight, easedProgress, rawProgress);
+    applyCollapseState(hero, "hero", expandedHeight, easedProgress, rawProgress);
+    shell.classList.toggle("is-results-scrolled", rawProgress >= 0.98);
+  }
+
+  function scheduleHeaderCollapseUpdate() {
+    if (headerAnimationFrame) {
+      return;
+    }
+    headerAnimationFrame = requestFrame(() => {
+      headerAnimationFrame = 0;
+      updateHeaderCollapse();
+    });
+  }
+
+  function requestFrame(callback) {
+    const request = typeof global.requestAnimationFrame === "function"
+      ? global.requestAnimationFrame.bind(global)
+      : (frameCallback) => global.setTimeout(frameCallback, 16);
+    return request(callback);
+  }
+
+  function resetHeaderCollapseMetrics() {
+    topbarExpandedHeight = 0;
+    heroExpandedHeight = 0;
+    scheduleHeaderCollapseUpdate();
+  }
+
+  function resetResultsScrollAndHeader() {
+    if (resultsRegion) {
+      resultsRegion.scrollTop = 0;
+    }
+    resetHeaderCollapseMetrics();
+  }
+
+  function setTradeViewOpen(open, options = {}) {
     const shell = shellElement();
     if (shell) {
       shell.classList.toggle("is-trade-view", open);
     }
     latestTradeCandidate = open ? latestTradeCandidate : null;
+    if (!open && options.resetScroll !== false) {
+      resetResultsScrollAndHeader();
+    }
   }
 
   function showSurfaceMessage(title, detail, options = {}) {
@@ -275,36 +415,6 @@
     return tab;
   }
 
-  async function openExpandedView() {
-    if (expandedMode) {
-      searchInput.focus();
-      return;
-    }
-    if (!chrome.windows || !chrome.windows.create || !chrome.runtime || !chrome.runtime.getURL) {
-      searchInput.focus();
-      return;
-    }
-
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab || !tab.id) {
-        searchInput.focus();
-        return;
-      }
-      const url = chrome.runtime.getURL(`src/popup/popup.html?expanded=1&sourceTabId=${encodeURIComponent(String(tab.id))}`);
-      await chrome.windows.create({
-        url,
-        type: "popup",
-        width: 500,
-        height: 850,
-        focused: true
-      });
-    } catch (error) {
-      warnNonFatal("Could not open the expanded popup view.", error);
-      searchInput.focus();
-    }
-  }
-
   async function extractArticle(tabId) {
     renderStatus("reading", "Reading page", "Accessing the active tab.");
     const injections = await chrome.scripting.executeScript({
@@ -326,7 +436,7 @@
   }
 
   function setActiveTab(tabName) {
-    for (const button of [relatedTab, trendingTab, searchTab]) {
+    for (const button of [relatedTab, trendingTab, watchlistTab]) {
       if (!button) {
         continue;
       }
@@ -400,7 +510,10 @@
       return;
     }
     latestRelatedVisibleCount = Math.min(latestRelatedVisibleCount + RELATED_BATCH_SIZE, latestRelatedGroups.length);
-    renderGroups(latestRelatedGroups, latestRenderOptions);
+    renderGroups(latestRelatedGroups, {
+      ...latestRenderOptions,
+      preserveScroll: true
+    });
   }
 
   function installRelatedPagination(totalCount) {
@@ -508,35 +621,67 @@
   }
 
   function renderGroups(groups, options = {}) {
+    const preserveScroll = Boolean(options.preserveScroll);
+    const persistedOptions = { ...options };
+    delete persistedOptions.preserveScroll;
+    const previousScrollTop = preserveScroll ? resultsRegion.scrollTop || 0 : 0;
+
     clearRelatedPagination();
-    setTradeViewOpen(false);
+    setTradeViewOpen(false, { resetScroll: !preserveScroll });
     const displayableGroups = filterDisplayableGroups(groups);
     latestRenderedGroups = displayableGroups.slice();
-    latestRenderOptions = { ...options };
+    latestRenderOptions = { ...persistedOptions };
     const sorted = sortedGroups(displayableGroups);
-    const progressive = Boolean(options.progressive);
+    const progressive = Boolean(persistedOptions.progressive);
     const visibleCount = progressive
       ? Math.min(latestRelatedVisibleCount, sorted.length)
       : sorted.length;
-    renderer.renderResults(resultsRegion, sorted.slice(0, visibleCount), {
-      ...options,
+    const renderOptions = {
+      ...persistedOptions,
       detail: sortLabel(),
       showMatchLimitNote: false
-    });
+    };
+    if (expandedMarketKey !== undefined) {
+      renderOptions.expandedMarketKey = expandedMarketKey;
+    }
+    if (expandedRowKeys.size) {
+      renderOptions.expandedRowKeys = Array.from(expandedRowKeys);
+    }
+    renderer.renderResults(resultsRegion, sorted.slice(0, visibleCount), renderOptions);
     if (progressive) {
       installRelatedPagination(sorted.length);
+    }
+    if (preserveScroll) {
+      resultsRegion.scrollTop = previousScrollTop;
+      scheduleHeaderCollapseUpdate();
     }
   }
 
   function renderSearchReadyState() {
     clearRelatedPagination();
     setTradeViewOpen(false);
+    expandedMarketKey = undefined;
+    expandedRowKeys.clear();
     latestRenderedGroups = [];
     latestRenderOptions = { title: "Search results" };
     renderStatus("complete", "Search ready", "Type a query to search markets.");
     renderer.renderEmpty(resultsRegion, "Search markets", "Type a market, token, event, or topic.", {
       title: "Search results",
       detail: "Ready"
+    });
+  }
+
+  function renderWatchlistEmptyState() {
+    clearRelatedPagination();
+    setTradeViewOpen(false);
+    expandedMarketKey = undefined;
+    expandedRowKeys.clear();
+    latestRenderedGroups = [];
+    latestRenderOptions = { title: "Watchlist" };
+    setActiveTab("watchlist");
+    renderStatus("complete", "Watchlist", "No saved markets yet.");
+    renderer.renderEmpty(resultsRegion, "No watchlist markets yet", "Saved markets will appear here.", {
+      title: "Watchlist"
     });
   }
 
@@ -649,6 +794,101 @@
     return null;
   }
 
+  function marketCardByKey(key) {
+    return Array.from(resultsRegion.querySelectorAll(".market-card"))
+      .find((node) => node.dataset && node.dataset.marketKey === key) || null;
+  }
+
+  function measuredCardHeight(card) {
+    if (!card) {
+      return 0;
+    }
+    const rect = card.getBoundingClientRect ? card.getBoundingClientRect() : null;
+    const rectHeight = rect && Number.isFinite(rect.height) ? rect.height : 0;
+    const scrollHeight = Number(card.scrollHeight);
+    const offsetHeight = Number(card.offsetHeight);
+    return Math.round(Math.max(rectHeight || 0, scrollHeight || 0, offsetHeight || 0));
+  }
+
+  function animateMarketCardReplacement(key, previousHeight, isExpanding) {
+    const card = marketCardByKey(key);
+    if (!card) {
+      return;
+    }
+    const targetHeight = measuredCardHeight(card);
+    if (!previousHeight || !targetHeight || Math.abs(targetHeight - previousHeight) < 2) {
+      return;
+    }
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) {
+        return;
+      }
+      cleaned = true;
+      card.classList.remove("market-card-height-transition", "is-expanding", "is-collapsing");
+      card.style.height = "";
+      card.style.overflow = "";
+      card.style.willChange = "";
+    };
+
+    card.classList.add("market-card-height-transition", isExpanding ? "is-expanding" : "is-collapsing");
+    card.style.height = `${previousHeight}px`;
+    card.style.overflow = "hidden";
+    card.style.willChange = "height";
+    card.getBoundingClientRect();
+
+    requestFrame(() => {
+      card.style.height = `${targetHeight}px`;
+    });
+
+    card.addEventListener("transitionend", (event) => {
+      if (event.propertyName === "height") {
+        cleanup();
+      }
+    }, { once: true });
+    global.setTimeout(cleanup, 360);
+  }
+
+  function toggleMarketCardExpansion(card) {
+    if (!card || !card.dataset || !card.dataset.marketKey) {
+      return;
+    }
+    const key = card.dataset.marketKey;
+    const wasExpanded = card.classList.contains("market-card-expanded");
+    const previousHeight = measuredCardHeight(card);
+    if (wasExpanded) {
+      expandedMarketKey = null;
+      expandedRowKeys.delete(key);
+    } else {
+      if (expandedMarketKey !== key) {
+        expandedRowKeys.clear();
+      }
+      expandedMarketKey = key;
+    }
+    renderGroups(latestRenderedGroups, {
+      ...latestRenderOptions,
+      preserveScroll: true
+    });
+    animateMarketCardReplacement(key, previousHeight, !wasExpanded);
+  }
+
+  function revealAllExpandedRows(showMoreNode) {
+    const card = showMoreNode && showMoreNode.closest ? showMoreNode.closest(".market-card") : null;
+    if (!card || !card.dataset || !card.dataset.marketKey) {
+      return;
+    }
+    const key = showMoreNode.dataset.marketShowMoreKey || card.dataset.marketKey;
+    const previousHeight = measuredCardHeight(card);
+    expandedMarketKey = card.dataset.marketKey;
+    expandedRowKeys.add(key);
+    renderGroups(latestRenderedGroups, {
+      ...latestRenderOptions,
+      preserveScroll: true
+    });
+    animateMarketCardReplacement(card.dataset.marketKey, previousHeight, true);
+  }
+
   function restoreMarketList() {
     setMenuOpen(false);
     setTradeViewOpen(false);
@@ -663,7 +903,9 @@
     }
     const activeTab = document.querySelector(".tab-button.is-active");
     const tabName = activeTab && activeTab.dataset ? activeTab.dataset.tab : "";
-    if (tabName === "search") {
+    if (tabName === "watchlist") {
+      renderStatus("complete", "Watchlist", "No saved markets yet.");
+    } else if (tabName === "search") {
       renderStatus("complete", latestRenderedGroups.length ? "Search complete" : "Search ready", latestRenderedGroups.length ? `${latestRenderedGroups.length} market${latestRenderedGroups.length === 1 ? "" : "s"} found` : "Type a query to search markets.");
     } else if (tabName === "trending") {
       renderStatus("complete", "Trending loaded", latestRenderedGroups.length ? `${latestRenderedGroups.length} market${latestRenderedGroups.length === 1 ? "" : "s"} found` : "No markets found");
@@ -681,6 +923,7 @@
     latestTradeCandidate = candidate;
     setTradeViewOpen(true);
     renderer.renderTradeView(resultsRegion, candidate);
+    resultsRegion.scrollTop = 0;
     renderStatus("complete", "Trade view", "Review market and order details.");
     const backButton = resultsRegion.querySelector("[data-trade-back]");
     if (backButton && typeof backButton.focus === "function") {
@@ -1051,10 +1294,13 @@
     setControlsDisabled(true);
     clearRelatedPagination();
     setTradeViewOpen(false);
+    expandedMarketKey = undefined;
+    expandedRowKeys.clear();
     latestRelatedGroups = [];
     latestRelatedArticle = null;
     latestRelatedVisibleCount = RELATED_INITIAL_VISIBLE_GROUPS;
     setActiveTab("related");
+    renderLoading();
 
     try {
       const tab = await getActiveTab();
@@ -1118,8 +1364,11 @@
     setControlsDisabled(true);
     clearRelatedPagination();
     setTradeViewOpen(false);
-    setActiveTab("search");
+    expandedMarketKey = undefined;
+    expandedRowKeys.clear();
+    setActiveTab("");
     renderStatus("searching", "Searching markets", `Looking for "${normalized}".`);
+    renderLoading();
 
     try {
       const matches = polymarket.searchMarkets
@@ -1166,8 +1415,11 @@
     setControlsDisabled(true);
     clearRelatedPagination();
     setTradeViewOpen(false);
+    expandedMarketKey = undefined;
+    expandedRowKeys.clear();
     setActiveTab("trending");
     renderStatus("searching", "Loading trending", "Checking active markets.");
+    renderLoading();
 
     try {
       const matches = polymarket.trendingMarkets
@@ -1231,24 +1483,14 @@
       });
     });
   }
-  if (tradeToggleButton) {
-    tradeToggleButton.addEventListener("click", () => {
-      const pressed = tradeToggleButton.getAttribute("aria-pressed") === "true";
-      tradeToggleButton.setAttribute("aria-pressed", String(!pressed));
-      const shell = shellElement();
-      if (shell) {
-        shell.classList.toggle("is-trade-mode", !pressed);
-      }
-      showSurfaceMessage(!pressed ? "Trade mode on" : "Trade mode off", "Market cards open the in-extension trading view.");
-      renderStatus("complete", !pressed ? "Trade mode on" : "Trade mode off", "Cards stay inside the trading view.");
-    });
-  }
   searchForm.addEventListener("submit", (event) => {
     event.preventDefault();
     runMarketSearch(searchInput.value);
   });
   relatedTab.addEventListener("click", () => {
     setActiveTab("related");
+    expandedMarketKey = undefined;
+    expandedRowKeys.clear();
     if (latestRelatedGroups.length) {
       renderStatus("complete", "Local scan complete", relatedDetail(latestRelatedGroups.length));
       renderGroups(latestRelatedGroups, {
@@ -1267,11 +1509,7 @@
     run();
   });
   trendingTab.addEventListener("click", runTrendingMarkets);
-  searchTab.addEventListener("click", () => {
-    setActiveTab("search");
-    searchInput.focus();
-    renderSearchReadyState();
-  });
+  watchlistTab.addEventListener("click", renderWatchlistEmptyState);
   resultsRegion.addEventListener("click", (event) => {
     const tradeBack = event.target.closest("[data-trade-back]");
     if (tradeBack) {
@@ -1295,7 +1533,7 @@
       const action = tradeAction.dataset.tradeAction;
       setTradeActionsOpen(false);
       if (action === "settings") {
-        showSurfaceMessage("Settings", "Read-only matching is active. Cards open the trading view.", { timeoutMs: 3000 });
+        showSurfaceMessage("Settings", "Read-only matching is active. Date rows open the trading view.", { timeoutMs: 3000 });
         renderStatus("complete", "Settings", "Read-only matching is active.");
         return;
       }
@@ -1359,14 +1597,78 @@
       return;
     }
 
+    const showMoreRows = event.target.closest("[data-market-show-more-key]");
+    if (showMoreRows) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTradeActionsOpen(false);
+      revealAllExpandedRows(showMoreRows);
+      return;
+    }
+
+    const marketRow = event.target.closest("[data-market-row-key]");
+    if (marketRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTradeActionsOpen(false);
+      const candidate = findMarketCandidateByKey(marketRow.dataset.marketRowKey);
+      if (candidate) {
+        openTradeView(candidate);
+      }
+      return;
+    }
+
+    const marketToggle = event.target.closest("[data-market-toggle]");
+    if (marketToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleMarketCardExpansion(marketToggle.closest(".market-card"));
+      return;
+    }
+
     const marketCard = event.target.closest(".market-card");
     if (marketCard) {
       event.preventDefault();
       setTradeActionsOpen(false);
-      const candidate = findMarketCandidateByKey(marketCard.dataset.marketKey);
+      toggleMarketCardExpansion(marketCard);
+    }
+  });
+  resultsRegion.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    const marketRow = event.target.closest("[data-market-row-key]");
+    if (marketRow) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTradeActionsOpen(false);
+      const candidate = findMarketCandidateByKey(marketRow.dataset.marketRowKey);
       if (candidate) {
         openTradeView(candidate);
       }
+      return;
+    }
+    const showMoreRows = event.target.closest("[data-market-show-more-key]");
+    if (showMoreRows) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTradeActionsOpen(false);
+      revealAllExpandedRows(showMoreRows);
+      return;
+    }
+    const marketToggle = event.target.closest("[data-market-toggle]");
+    if (marketToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleMarketCardExpansion(marketToggle.closest(".market-card"));
+      return;
+    }
+    const marketCard = event.target.closest(".market-card");
+    if (marketCard) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTradeActionsOpen(false);
+      toggleMarketCardExpansion(marketCard);
     }
   });
   resultsRegion.addEventListener("input", (event) => {
@@ -1378,12 +1680,15 @@
   if (settingsButton) {
     settingsButton.addEventListener("click", () => {
       setMenuOpen(false, { focusButton: true });
-      if (expandedMode) {
-        showSurfaceMessage("Settings", "Read-only matching is active. Cards open the trading view.");
-        renderStatus("complete", "Settings", "Read-only matching is active.");
-        return;
-      }
-      openExpandedView();
+      showSurfaceMessage("Settings", "Read-only matching is active. Date rows open the trading view.");
+      renderStatus("complete", "Settings", "Read-only matching is active.");
+    });
+  }
+  if (profileButton) {
+    profileButton.addEventListener("click", () => {
+      setMenuOpen(false, { focusButton: true });
+      showSurfaceMessage("Profile", "Default profile. Connect to personalize your market view.");
+      renderStatus("complete", "Profile", "Default profile is active.");
     });
   }
   if (privacyInfoButton) {
@@ -1415,6 +1720,12 @@
       }
     });
   }
+  if (resultsRegion) {
+    resultsRegion.addEventListener("scroll", scheduleHeaderCollapseUpdate, { passive: true });
+  }
+  if (typeof global.addEventListener === "function") {
+    global.addEventListener("resize", resetHeaderCollapseMetrics);
+  }
   document.addEventListener("click", (event) => {
     if (event.target && event.target.closest && !event.target.closest("[data-trade-menu], [data-trade-actions]")) {
       setTradeActionsOpen(false);
@@ -1436,5 +1747,6 @@
     event.preventDefault();
     setMenuOpen(false, { focusButton: true });
   });
+  updateHeaderCollapse();
   document.addEventListener("DOMContentLoaded", run, { once: true });
 })(window);

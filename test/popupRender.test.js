@@ -37,6 +37,20 @@ test("renders loading and complete status states", () => {
   assert.match(status.textContent, /3 related events found/);
 });
 
+test("renders the market search loading surface", () => {
+  const { renderer, results } = setupRenderer();
+
+  renderer.renderLoading(results);
+
+  assert.ok(results.classList.contains("is-loading"));
+  assert.ok(results.querySelector(".loader"));
+  assert.match(results.textContent, /Finding related markets/);
+
+  renderer.renderEmpty(results, "No markets found", "Try another topic.");
+  assert.equal(results.classList.contains("is-loading"), false);
+  assert.equal(results.querySelector(".loading-state"), null);
+});
+
 test("renders local scan context without repeating the article preview", () => {
   const { renderer, results } = setupRenderer();
 
@@ -49,7 +63,7 @@ test("renders local scan context without repeating the article preview", () => {
   assert.doesNotMatch(results.textContent, /Bitcoin preps 3% May downside/);
 });
 
-test("renders parent event cards with API image, option percentages, movement, and link", () => {
+test("renders parent event cards closed by default with API image, quote, movement, and link", () => {
   const { renderer, results } = setupRenderer();
   const image = "https://polymarket.example/bitcoin.png";
 
@@ -70,14 +84,18 @@ test("renders parent event cards with API image, option percentages, movement, a
   assert.equal(results.querySelector(".market-image").getAttribute("src"), image);
   assert.equal(results.querySelector(".market-image-fallback"), null);
   assert.match(card.textContent, /44%/);
-  assert.match(card.textContent, /56%/);
+  assert.doesNotMatch(card.textContent, /56%/);
   assert.equal(card.querySelector(".probability-track"), null);
-  assert.ok(card.classList.contains("market-card-expanded"));
-  assert.equal(card.querySelectorAll(".market-scenario-row").length, 2);
-  assert.match(card.textContent, /Polymarket/);
+  assert.equal(card.classList.contains("market-card-expanded"), false);
+  assert.equal(card.querySelectorAll(".market-scenario-row").length, 0);
+  assert.equal(card.querySelector("[data-market-toggle]").getAttribute("aria-expanded"), "false");
+  assert.ok(card.querySelector(".market-chevron"));
+  assert.doesNotMatch(card.textContent, /Polymarket/);
   assert.equal(card.dataset.marketSource, "Polymarket");
   assert.equal(card.querySelector(".source-badge").getAttribute("aria-label"), "Polymarket");
   assert.ok(card.querySelector(".source-polymarket .source-mark"));
+  assert.equal(card.querySelector(".source-polymarket .source-logo").getAttribute("src"), "assets/polymarket-icon.svg");
+  assert.equal(card.querySelector(".source-label"), null);
   assert.equal(card.querySelector(".market-meta-row"), null);
   assert.doesNotMatch(card.textContent, /traders/);
   assert.doesNotMatch(card.textContent, /volume/);
@@ -112,25 +130,138 @@ test("renders compact secondary cards with source badges, quotes, and chevrons",
 
   const cards = results.querySelectorAll(".market-card");
   assert.equal(cards.length, 2);
-  assert.ok(cards[0].classList.contains("market-card-expanded"));
+  assert.equal(cards[0].classList.contains("market-card-expanded"), false);
   assert.equal(cards[1].classList.contains("market-card-expanded"), false);
   assert.match(cards[1].textContent, /Brent crude above/);
   assert.match(cards[1].textContent, /\$95\.12/);
   assert.doesNotMatch(cards[1].textContent, /41%/);
-  assert.match(cards[1].textContent, /Hyperliquid/);
+  assert.doesNotMatch(cards[1].textContent, /Hyperliquid/);
   assert.equal(cards[1].dataset.marketSource, "Hyperliquid");
   assert.match(cards[1].getAttribute("href"), /^#trade-/);
   assert.equal(cards[1].dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
   assert.equal(cards[1].querySelector(".source-badge").getAttribute("aria-label"), "Hyperliquid");
   assert.ok(cards[1].querySelector(".source-hyperliquid .source-mark"));
+  assert.equal(cards[1].querySelector(".source-hyperliquid .source-logo").getAttribute("src"), "assets/hyperliquid-symbol.svg");
+  assert.equal(cards[1].querySelector(".source-label"), null);
   assert.ok(cards[1].querySelector(".market-quote"));
   assert.ok(cards[1].querySelector(".market-chevron"));
+});
+
+test("renders the selected parent event card as expanded", () => {
+  const { renderer, results } = setupRenderer();
+  const first = makeBinaryCandidate({ id: "first", eventId: "first", title: "First market" });
+  const second = makeBinaryCandidate({ id: "second", eventId: "second", title: "Second market" });
+
+  renderer.renderResults(results, [first, second], {
+    expandedMarketKey: renderer.marketKey(second)
+  });
+
+  const cards = results.querySelectorAll(".market-card");
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].classList.contains("market-card-expanded"), false);
+  assert.equal(cards[0].querySelector("[data-market-toggle]").getAttribute("aria-expanded"), "false");
+  assert.ok(cards[0].querySelector(".market-chevron"));
+  assert.ok(cards[1].classList.contains("market-card-expanded"));
+  assert.equal(cards[1].querySelector("[data-market-toggle]").getAttribute("aria-expanded"), "true");
+  assert.ok(cards[1].querySelector(".market-expanded-caret"));
+});
+
+test("renders expanded date rows as the trade-view targets", () => {
+  const { renderer, results } = setupRenderer();
+  const june = makeBinaryCandidate({
+    id: "crude-june",
+    eventId: "crude-event",
+    eventTitle: "Crude Oil all time high by...?",
+    title: "Crude Oil all time high by June 29?",
+    endDate: "2026-06-29T12:00:00.000Z",
+    primaryPercent: 1
+  });
+  const september = makeBinaryCandidate({
+    id: "crude-september",
+    eventId: "crude-event",
+    eventTitle: "Crude Oil all time high by...?",
+    title: "Crude Oil all time high by September 29?",
+    endDate: "2026-09-29T12:00:00.000Z",
+    primaryPercent: 10
+  });
+
+  renderer.renderResults(results, [june, september], {
+    expandedMarketKey: renderer.marketKey(june)
+  });
+
+  const rows = results.querySelectorAll(".market-scenario-row");
+  assert.equal(rows.length, 2);
+  assert.match(rows[0].textContent, /September 29|June 29/);
+  assert.ok(rows[0].dataset.marketRowKey);
+  assert.equal(rows[0].getAttribute("role"), "button");
+  assert.equal(rows[0].getAttribute("tabindex"), "0");
+});
+
+test("renders grouped option labels and caps expanded options behind show more", () => {
+  const { renderer, results } = setupRenderer();
+  const countries = ["Argentina", "Spain", "Brazil", "France", "England", "Germany", "Portugal", "Japan"];
+  const markets = countries.map((country, index) => makeBinaryCandidate({
+    id: `world-cup-${country.toLowerCase()}`,
+    eventId: "world-cup-winner",
+    eventTitle: "World Cup Winner",
+    title: `Will ${country} win the 2026 FIFA World Cup?`,
+    groupItemTitle: country,
+    raw: { groupItemTitle: country },
+    endDate: "2026-07-20T00:00:00.000Z",
+    primaryPercent: index === 0 ? 10 : index
+  }));
+
+  renderer.renderResults(results, markets, {
+    expandedMarketKey: renderer.marketKey(markets[0])
+  });
+
+  const optionRows = results.querySelectorAll(".market-scenario-row[data-market-row-key]");
+  assert.equal(optionRows.length, 6);
+  assert.equal(results.querySelectorAll(".scenario-dot").length, 0);
+  assert.match(optionRows[0].textContent, /Argentina/);
+  assert.match(optionRows[1].textContent, /Spain/);
+  assert.doesNotMatch(optionRows[0].textContent, /July 20/);
+  assert.doesNotMatch(optionRows[1].textContent, /July 20/);
+
+  const showMore = results.querySelector("[data-market-show-more-key]");
+  assert.ok(showMore);
+  assert.match(showMore.textContent, /Show more/);
+  assert.match(showMore.textContent, /\+2/);
+  assert.equal(showMore.getAttribute("role"), "button");
+  assert.equal(showMore.getAttribute("tabindex"), "0");
+});
+
+test("renders all grouped options when expanded row key is requested", () => {
+  const { renderer, results } = setupRenderer();
+  const countries = ["Argentina", "Spain", "Brazil", "France", "England", "Germany", "Portugal", "Japan"];
+  const markets = countries.map((country, index) => makeBinaryCandidate({
+    id: `world-cup-${country.toLowerCase()}`,
+    eventId: "world-cup-winner",
+    eventTitle: "World Cup Winner",
+    title: `Will ${country} win the 2026 FIFA World Cup?`,
+    groupItemTitle: country,
+    raw: { groupItemTitle: country },
+    endDate: "2026-07-20T00:00:00.000Z",
+    primaryPercent: index === 0 ? 10 : index
+  }));
+  const expandedKey = renderer.marketKey(markets[0]);
+
+  renderer.renderResults(results, markets, {
+    expandedMarketKey: expandedKey,
+    expandedRowKeys: [expandedKey]
+  });
+
+  const optionRows = results.querySelectorAll(".market-scenario-row[data-market-row-key]");
+  assert.equal(optionRows.length, 8);
+  assert.match(optionRows[6].textContent, /Portugal/);
+  assert.match(optionRows[7].textContent, /Japan/);
+  assert.equal(results.querySelector("[data-market-show-more-key]"), null);
 });
 
 test("renders a Hyperliquid-only expanded card with venue price rows", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [makeBinaryCandidate({
+  const candidate = makeBinaryCandidate({
     id: "hyperliquid-btc",
     eventId: "hyperliquid-btc",
     title: "BTC perpetual market",
@@ -144,7 +275,11 @@ test("renders a Hyperliquid-only expanded card with venue price rows", () => {
     primaryOutcome: "Mark",
     marketSource: "Hyperliquid",
     movement: makeMovement("up", 0.05)
-  })]);
+  });
+
+  renderer.renderResults(results, [candidate], {
+    expandedMarketKey: renderer.marketKey(candidate)
+  });
 
   const card = results.querySelector(".market-card");
   assert.ok(card.classList.contains("market-card-expanded"));
@@ -198,7 +333,7 @@ test("only shows no-strong-match note for a full related result set", () => {
 test("renders one clickable parent event card and hides child markets", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [
+  const candidates = [
     {
       ...makeBinaryCandidate({
         id: "fed-cut",
@@ -229,7 +364,11 @@ test("renders one clickable parent event card and hides child markets", () => {
       eventId: "fed-event",
       eventTitle: "Fed rate decisions"
     }
-  ]);
+  ];
+
+  renderer.renderResults(results, candidates, {
+    expandedMarketKey: renderer.marketKey(candidates[0])
+  });
 
   const cards = results.querySelectorAll(".market-card");
   assert.equal(cards.length, 1);
@@ -501,7 +640,7 @@ test("trade view does not invent binary prices for Hyperliquid markets without a
 test("renders option-agnostic labels for team and multi-option markets", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [makeBinaryCandidate({
+  const candidate = makeBinaryCandidate({
     title: "NBA Finals winner",
     url: "https://polymarket.com/event/nba-finals-winner",
     primaryOutcome: "Lakers",
@@ -516,7 +655,11 @@ test("renders option-agnostic labels for team and multi-option markets", () => {
     ],
     movement: makeMovement("flat", 0),
     confidence: 66
-  })]);
+  });
+
+  renderer.renderResults(results, [candidate], {
+    expandedMarketKey: renderer.marketKey(candidate)
+  });
 
   const text = results.querySelector(".market-card").textContent;
   assert.match(text, /Lakers/);
@@ -532,7 +675,7 @@ test("renders option-agnostic labels for team and multi-option markets", () => {
 test("renders unavailable option prices as n/a instead of zero", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderResults(results, [makeBinaryCandidate({
+  const candidate = makeBinaryCandidate({
     title: "Will Bitcoin reach an extremely long price target before the end of 2026?",
     url: "https://polymarket.com/event/bitcoin-target",
     primaryPrice: null,
@@ -540,7 +683,11 @@ test("renders unavailable option prices as n/a instead of zero", () => {
     primaryPercent: null,
     movement: makeMovement("unknown", null),
     confidence: 59
-  })]);
+  });
+
+  renderer.renderResults(results, [candidate], {
+    expandedMarketKey: renderer.marketKey(candidate)
+  });
 
   const text = results.textContent;
   assert.match(text, /Yesn\/a/);

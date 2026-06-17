@@ -304,7 +304,7 @@ async function inspectLayout(page) {
       matchLimitCount: document.querySelectorAll(".match-limit-note").length,
       searchPlaceholder: document.querySelector("#market-search-input")?.getAttribute("placeholder") || "",
       activeTabText: document.querySelector(".tab-button.is-active")?.textContent.trim() || "",
-      privacyText: document.querySelector(".privacy-footer")?.textContent.replace(/\s+/g, " ").trim() || "",
+      footerCount: document.querySelectorAll(".privacy-footer").length,
       menuOpen: document.querySelector(".popup-shell")?.classList.contains("is-menu-open") || false,
       menuExpanded: document.querySelector("#menu-button")?.getAttribute("aria-expanded") || "",
       sourceBadgeCount: document.querySelectorAll(".source-badge").length,
@@ -320,7 +320,7 @@ async function inspectLayout(page) {
         const top = document.querySelector(".market-card-expanded .market-expanded-top");
         const firstRow = document.querySelector(".market-card-expanded .market-scenario-row");
         if (!top || !firstRow) {
-          return false;
+          return true;
         }
         return top.getBoundingClientRect().bottom <= firstRow.getBoundingClientRect().top + 1;
       })(),
@@ -331,7 +331,7 @@ async function inspectLayout(page) {
           return false;
         }
         const labelRect = label.getBoundingClientRect();
-        return [...firstRow.querySelectorAll(".scenario-dot, .scenario-label, .scenario-value-wrap")].some((node) => {
+        return [...firstRow.querySelectorAll(".scenario-label, .scenario-value-wrap")].some((node) => {
           const nodeRect = node.getBoundingClientRect();
           return labelRect.left < nodeRect.right &&
             labelRect.right > nodeRect.left &&
@@ -342,15 +342,15 @@ async function inspectLayout(page) {
       leadTitleClipped: (() => {
         const title = document.querySelector(".market-card-expanded .event-parent-title");
         if (!title) {
-          return true;
+          return false;
         }
         return title.scrollWidth > title.clientWidth + 1 || title.scrollHeight > title.clientHeight + 4;
       })(),
       leadTitleMenuOverlap: (() => {
-        const title = document.querySelector(".market-card-expanded .event-parent-title");
+        const title = document.querySelector(".market-card .event-parent-title, .market-card .market-title");
         const menu = document.querySelector(".action-menu");
         if (!title || !menu) {
-          return true;
+          return false;
         }
         const titleRect = title.getBoundingClientRect();
         const menuRect = menu.getBoundingClientRect();
@@ -359,19 +359,7 @@ async function inspectLayout(page) {
           titleRect.top < menuRect.bottom &&
           titleRect.bottom > menuRect.top;
       })(),
-      topicMenuOverlap: (() => {
-        const topic = document.querySelector(".detected-topic-pill");
-        const menu = document.querySelector(".action-menu");
-        if (!topic || !menu) {
-          return true;
-        }
-        const topicRect = topic.getBoundingClientRect();
-        const menuRect = menu.getBoundingClientRect();
-        return topicRect.left < menuRect.right &&
-          topicRect.right > menuRect.left &&
-          topicRect.top < menuRect.bottom &&
-          topicRect.bottom > menuRect.top;
-      })(),
+      topicPillCount: document.querySelectorAll(".detected-topic-pill, #detected-topic-text").length,
       smallMenuClearsLeadCard: (() => {
         if (viewportWidth > 430) {
           return true;
@@ -387,18 +375,16 @@ async function inspectLayout(page) {
       })(),
       actionMenuRect: document.querySelector(".action-menu")?.getBoundingClientRect().toJSON(),
       actionMenuTextClipped: [...document.querySelectorAll(".action-menu-item span")].some((node) => node.scrollWidth > node.clientWidth + 1),
-      tradeToggleRect: document.querySelector(".trade-toggle")?.getBoundingClientRect().toJSON(),
+      searchRect: document.querySelector(".market-search")?.getBoundingClientRect().toJSON(),
+      tabRowRect: document.querySelector(".market-tabs")?.getBoundingClientRect().toJSON(),
       menuButtonRect: document.querySelector(".menu-button")?.getBoundingClientRect().toJSON(),
-      heroTitleRect: document.querySelector(".hero-region h1")?.getBoundingClientRect().toJSON(),
-      topicPillRect: document.querySelector(".detected-topic-pill")?.getBoundingClientRect().toJSON(),
-      leadTitleRect: document.querySelector(".market-card-expanded .event-parent-title")?.getBoundingClientRect().toJSON(),
-      leadCardRect: document.querySelector(".market-card-expanded")?.getBoundingClientRect().toJSON(),
-      leadImageRect: document.querySelector(".market-card-expanded .market-image, .market-card-expanded .market-image-fallback")?.getBoundingClientRect().toJSON(),
+      leadTitleRect: document.querySelector(".market-card .event-parent-title, .market-card .market-title")?.getBoundingClientRect().toJSON(),
+      leadCardRect: document.querySelector(".market-card")?.getBoundingClientRect().toJSON(),
+      leadImageRect: document.querySelector(".market-card .market-image, .market-card .market-image-fallback")?.getBoundingClientRect().toJSON(),
       expandedCaretCount: document.querySelectorAll(".market-expanded-caret").length,
       expandedCaretRect: document.querySelector(".market-expanded-caret")?.getBoundingClientRect().toJSON(),
       shellRect: document.querySelector(".popup-shell")?.getBoundingClientRect().toJSON(),
       resultsRect: document.querySelector("#results-region")?.getBoundingClientRect().toJSON(),
-      footerRect: document.querySelector(".privacy-footer")?.getBoundingClientRect().toJSON(),
       visualRadii: (() => {
         const readRadius = (selector) => {
           const node = document.querySelector(selector);
@@ -410,7 +396,7 @@ async function inspectLayout(page) {
         };
         return {
           shell: readRadius(".popup-shell"),
-          leadCard: readRadius(".market-card-expanded"),
+          leadCard: readRadius(".market-card"),
           compactCard: readRadius(".market-card:not(.market-card-expanded)"),
           actionMenu: readRadius(".action-menu")
         };
@@ -418,14 +404,12 @@ async function inspectLayout(page) {
       firstCardVisible: (() => {
         const card = document.querySelector(".market-card");
         const results = document.querySelector("#results-region");
-        const footer = document.querySelector(".privacy-footer");
-        if (!card || !results || !footer) {
+        if (!card || !results) {
           return false;
         }
         const rect = card.getBoundingClientRect();
         const resultsRect = results.getBoundingClientRect();
-        const footerRect = footer.getBoundingClientRect();
-        return rect.bottom > resultsRect.top + 80 && rect.top < footerRect.top - 80;
+        return rect.bottom > resultsRect.top + 80 && rect.top < resultsRect.bottom - 80;
       })(),
       visibleCardCount: [...document.querySelectorAll(".market-card")]
         .filter((card) => {
@@ -436,26 +420,20 @@ async function inspectLayout(page) {
       visibleCompactCardCount: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
         .filter((card) => {
           const rect = card.getBoundingClientRect();
-          const footer = document.querySelector(".privacy-footer").getBoundingClientRect();
-          return rect.top < footer.top - 40 && rect.bottom <= footer.top + 1;
+          const results = document.querySelector("#results-region").getBoundingClientRect();
+          return rect.top < results.bottom - 40 && rect.bottom <= results.bottom + 1;
         }).length,
       visibleCompactCardSources: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
         .filter((card) => {
           const rect = card.getBoundingClientRect();
-          const footer = document.querySelector(".privacy-footer").getBoundingClientRect();
-          return rect.top < footer.top - 40 && rect.bottom <= footer.top + 1;
+          const results = document.querySelector("#results-region").getBoundingClientRect();
+          return rect.top < results.bottom - 40 && rect.bottom <= results.bottom + 1;
         })
         .map((card) => ({
           source: card.dataset.marketSource || "",
           title: card.querySelector(".market-title, .event-parent-title")?.textContent.trim() || "",
           href: card.dataset.marketUrl || card.href
         })),
-      partialCompactAboveFooterCount: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
-        .filter((card) => {
-          const rect = card.getBoundingClientRect();
-          const footer = document.querySelector(".privacy-footer").getBoundingClientRect();
-          return rect.top < footer.top && rect.bottom > footer.top + 1;
-        }).length,
       compactCardRects: [...document.querySelectorAll(".market-card:not(.market-card-expanded)")]
         .map((card) => card.getBoundingClientRect().toJSON()),
       statusText: document.querySelector("#status-region").innerText,
@@ -528,11 +506,8 @@ async function main() {
       if (layout.documentWidth > viewport.width) {
         throw new Error(`${viewport.name} layout overflowed horizontally: document width ${layout.documentWidth}, viewport ${viewport.width}`);
       }
-      if (layout.footerRect && layout.footerRect.bottom > layout.shellRect.bottom + 1) {
-        throw new Error(`${viewport.name} footer was clipped vertically: footer bottom ${layout.footerRect.bottom}, shell bottom ${layout.shellRect.bottom}`);
-      }
-      if (layout.resultsRect && layout.footerRect && layout.resultsRect.bottom > layout.footerRect.top + 1) {
-        throw new Error(`${viewport.name} scrolling results region overlaps footer: results bottom ${layout.resultsRect.bottom}, footer top ${layout.footerRect.top}`);
+      if (layout.resultsRect && layout.shellRect && layout.resultsRect.bottom > layout.shellRect.bottom + 1) {
+        throw new Error(`${viewport.name} scrolling results region exceeded the shell: results bottom ${layout.resultsRect.bottom}, shell bottom ${layout.shellRect.bottom}`);
       }
       if (layout.overflowingElements.length) {
         throw new Error(`${viewport.name} layout has overflowing elements: ${JSON.stringify(layout.overflowingElements.slice(0, 3))}`);
@@ -540,10 +515,10 @@ async function main() {
       if (layout.cardCount !== 4) {
         throw new Error(`${viewport.name} layout rendered ${layout.cardCount} parent cards instead of 4.`);
       }
-      if (layout.expandedCaretCount !== 1 || !layout.expandedCaretRect || !layout.leadCardRect || layout.expandedCaretRect.left < layout.leadCardRect.left || layout.expandedCaretRect.right > layout.leadCardRect.right || layout.expandedCaretRect.top < layout.leadCardRect.top + 80 || layout.expandedCaretRect.bottom > layout.leadCardRect.bottom - 120) {
-        throw new Error(`${viewport.name} layout missing the expanded-card caret in the target card area: ${JSON.stringify({ caretCount: layout.expandedCaretCount, caret: layout.expandedCaretRect, card: layout.leadCardRect })}`);
+      if (layout.expandedCaretCount !== 0 || layout.scenarioLabels.length !== 0 || layout.scenarioValues.length !== 0) {
+        throw new Error(`${viewport.name} layout should start with every market card collapsed: ${JSON.stringify({ caretCount: layout.expandedCaretCount, labels: layout.scenarioLabels, values: layout.scenarioValues })}`);
       }
-      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 812 || layout.shellRect.height > 816)) {
+      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 542 || layout.shellRect.height > 546)) {
         throw new Error(`${viewport.name} layout shell height drifted from the reference aspect target: ${layout.shellRect && layout.shellRect.height}`);
       }
       if (viewport.name === "popup") {
@@ -559,14 +534,11 @@ async function main() {
         if (!/Yes 32¢/.test(tradeView.bodyText) || !/No 68¢/.test(tradeView.bodyText) || /No 1¢/.test(tradeView.bodyText)) {
           throw new Error(`${viewport.name} trade view rendered incorrect Yes/No prices: ${JSON.stringify(tradeView)}`);
         }
-        if (!tradeView.shellRect || !tradeView.bookRect || !tradeView.buyRect || tradeView.bookRect.top > tradeView.shellRect.bottom - 90 || tradeView.buyRect.bottom > tradeView.shellRect.bottom + 1) {
-          throw new Error(`${viewport.name} trade view pushed the order book out of the first screen: ${JSON.stringify(tradeView)}`);
+        if (!tradeView.shellRect || !tradeView.viewRect || !tradeView.bookRect || !tradeView.buyRect || tradeView.viewRect.height <= tradeView.shellRect.height || tradeView.bookRect.top <= tradeView.buyRect.bottom) {
+          throw new Error(`${viewport.name} trade view stopped behaving like a scrollable trade surface: ${JSON.stringify(tradeView)}`);
         }
         if (!tradeView.ticketRect || tradeView.ticketRect.height < 184 || tradeView.ticketRect.height > 198 || !tradeView.bookRect || tradeView.bookRect.top < 646 || tradeView.bookRect.top > 666) {
           throw new Error(`${viewport.name} trade view ticket rhythm drifted from the reference: ${JSON.stringify({ ticket: tradeView.ticketRect, book: tradeView.bookRect })}`);
-        }
-        if (tradeView.visibleOrderBookRows < 10) {
-          throw new Error(`${viewport.name} trade view did not expose all first-screen order-book rows: ${JSON.stringify(tradeView)}`);
         }
         if (JSON.stringify(tradeView.tradeActionLabels) !== JSON.stringify(["Settings", "Connect", "Information"])) {
           throw new Error(`${viewport.name} trade action menu labels drifted from the reference: ${JSON.stringify(tradeView.tradeActionLabels)}`);
@@ -599,14 +571,14 @@ async function main() {
       if (layout.matchLimitCount !== 0) {
         throw new Error(`${viewport.name} layout rendered ${layout.matchLimitCount} no-strong-match rows instead of 0.`);
       }
-      if (layout.searchPlaceholder !== "Search any market") {
+      if (layout.searchPlaceholder !== "Search markets") {
         throw new Error(`${viewport.name} layout missing target search placeholder: ${layout.searchPlaceholder}`);
       }
-      if (layout.activeTabText !== "Related") {
-        throw new Error(`${viewport.name} layout active tab was ${layout.activeTabText} instead of Related.`);
+      if (layout.activeTabText !== "Relevant Markets") {
+        throw new Error(`${viewport.name} layout active tab was ${layout.activeTabText} instead of Relevant Markets.`);
       }
-      if (!layout.menuOpen || layout.menuExpanded !== "true") {
-        throw new Error(`${viewport.name} layout did not render the target open menu state.`);
+      if (layout.menuOpen || layout.menuExpanded !== "false") {
+        throw new Error(`${viewport.name} layout should start with the action menu closed: ${JSON.stringify({ menuOpen: layout.menuOpen, menuExpanded: layout.menuExpanded })}`);
       }
       if (!layout.expandedTopBeforeRows) {
         throw new Error(`${viewport.name} expanded card header overlapped its scenario rows.`);
@@ -620,11 +592,14 @@ async function main() {
       if (layout.leadTitleMenuOverlap) {
         throw new Error(`${viewport.name} expanded lead title overlapped the open action menu: ${JSON.stringify({ title: layout.leadTitleRect, menu: layout.actionMenuRect })}`);
       }
-      if (layout.topicMenuOverlap) {
-        throw new Error(`${viewport.name} detected-topic pill overlapped the open action menu.`);
+      if (layout.topicPillCount !== 0) {
+        throw new Error(`${viewport.name} still rendered the removed detected-topic pill.`);
       }
-      if (!layout.smallMenuClearsLeadCard) {
+      if (layout.menuOpen && !layout.smallMenuClearsLeadCard) {
         throw new Error(`${viewport.name} open action menu overlapped the lead card on a small viewport.`);
+      }
+      if (layout.footerCount !== 0 || /Insights by Rainbow|Updated just now/i.test(layout.bodyText)) {
+        throw new Error(`${viewport.name} still rendered the removed bottom footer bar.`);
       }
       if (
         layout.sourceBadgeCount !== layout.cardCount ||
@@ -635,36 +610,34 @@ async function main() {
         throw new Error(`${viewport.name} layout missing required venue badges or Hyperliquid link: ${JSON.stringify(layout.venueLinks)}`);
       }
       if (
-        !/Detected topic:\s*Iran negotiations/.test(layout.bodyText) ||
+        /Detected topic:/i.test(layout.bodyText) ||
         !/US x Iran permanent peace deal by/.test(layout.bodyText) ||
         !/Brent crude above \$95 by Jul 31/.test(layout.bodyText) ||
         !/China invades Taiwan before 2027/.test(layout.bodyText) ||
-        !layout.scenarioLabels.includes("June 15") ||
-        !layout.scenarioLabels.includes("December 31") ||
-        !layout.scenarioValues.includes("8%") ||
-        !layout.scenarioValues.includes("68%")
+        /June 15|December 31|68%/.test(layout.bodyText)
       ) {
         throw new Error(`${viewport.name} layout drifted from the target Iran market composition: ${JSON.stringify({ text: layout.bodyText, labels: layout.scenarioLabels, values: layout.scenarioValues })}`);
       }
       if (viewport.name === "compact" && !layout.firstCardVisible) {
-        throw new Error(`${viewport.name} layout did not show enough of the lead market card above the footer.`);
+        throw new Error(`${viewport.name} layout did not show enough of the lead market card inside the results region.`);
+      }
+      if ((viewport.name === "mid" || viewport.name === "narrow") && !layout.firstCardVisible) {
+        throw new Error(`${viewport.name} default-closed layout did not show the lead market content inside the results region: ${JSON.stringify({ lead: layout.leadCardRect, results: layout.resultsRect })}`);
       }
       if (viewport.name === "popup" && layout.visibleCompactCardCount < 2) {
-        throw new Error(`${viewport.name} layout did not show two compact cards above the footer: ${JSON.stringify({ visibleCompactCardCount: layout.visibleCompactCardCount, compactCardRects: layout.compactCardRects, footer: layout.footerRect })}`);
+        throw new Error(`${viewport.name} layout did not show two compact cards inside the results region: ${JSON.stringify({ visibleCompactCardCount: layout.visibleCompactCardCount, compactCardRects: layout.compactCardRects, results: layout.resultsRect })}`);
       }
       if (viewport.name === "popup" && !layout.visibleCompactCardSources.some((card) => card.source === "Hyperliquid" && /hyperliquid\.xyz/.test(card.href))) {
-        throw new Error(`${viewport.name} layout did not show a visible compact Hyperliquid card above the footer: ${JSON.stringify(layout.visibleCompactCardSources)}`);
+        throw new Error(`${viewport.name} layout did not show a visible compact Hyperliquid card inside the results region: ${JSON.stringify(layout.visibleCompactCardSources)}`);
       }
-      if (viewport.name === "popup" && layout.partialCompactAboveFooterCount !== 0) {
-        throw new Error(`${viewport.name} layout showed a partial compact card above the footer: ${JSON.stringify(layout.compactCardRects)}`);
-      }
-      if (viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.width < 176 || layout.actionMenuRect.width > 180)) {
+      if (layout.menuOpen && viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.width < 176 || layout.actionMenuRect.width > 180)) {
         throw new Error(`${viewport.name} action menu was too narrow for the reference overlay: ${layout.actionMenuRect && layout.actionMenuRect.width}`);
       }
-      if (layout.actionMenuTextClipped) {
+      if (layout.menuOpen && layout.actionMenuTextClipped) {
         throw new Error(`${viewport.name} action menu text was clipped.`);
       }
       if (
+        layout.menuOpen &&
         viewport.name === "popup" &&
         (!layout.actionMenuRect ||
           !layout.shellRect ||
@@ -673,50 +646,47 @@ async function main() {
       ) {
         throw new Error(`${viewport.name} action menu was not anchored to the reference-style right edge: ${JSON.stringify({ menu: layout.actionMenuRect, shell: layout.shellRect })}`);
       }
-      if (viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.height < 156 || layout.actionMenuRect.height > 174)) {
+      if (layout.menuOpen && viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.height < 156 || layout.actionMenuRect.height > 174)) {
         throw new Error(`${viewport.name} action menu height drifted from the compact reference overlay: ${JSON.stringify(layout.actionMenuRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.tradeToggleRect || layout.tradeToggleRect.top < 38 || layout.tradeToggleRect.top > 48)) {
-        throw new Error(`${viewport.name} trade control vertical placement drifted from the reference header: ${JSON.stringify(layout.tradeToggleRect)}`);
+      if (viewport.name === "popup" && (!layout.searchRect || layout.searchRect.top < 33 || layout.searchRect.top > 39)) {
+        throw new Error(`${viewport.name} search control vertical placement drifted from the reference header: ${JSON.stringify(layout.searchRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.tradeToggleRect || layout.tradeToggleRect.width < 108 || layout.tradeToggleRect.width > 120 || layout.tradeToggleRect.height < 40 || layout.tradeToggleRect.height > 44)) {
-        throw new Error(`${viewport.name} trade control width drifted from the reference header: ${JSON.stringify(layout.tradeToggleRect)}`);
+      if (viewport.name === "popup" && (!layout.searchRect || layout.searchRect.width < 330 || layout.searchRect.width > 370 || layout.searchRect.height < 40 || layout.searchRect.height > 44)) {
+        throw new Error(`${viewport.name} search control size drifted from the reference header: ${JSON.stringify(layout.searchRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.top < 38 || layout.menuButtonRect.top > 48)) {
+      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.top < 34 || layout.menuButtonRect.top > 38)) {
         throw new Error(`${viewport.name} menu button vertical placement drifted from the reference header: ${JSON.stringify(layout.menuButtonRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.width < 40 || layout.menuButtonRect.width > 44 || layout.menuButtonRect.height < 40 || layout.menuButtonRect.height > 44)) {
+      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.width < 49 || layout.menuButtonRect.width > 51 || layout.menuButtonRect.height < 49 || layout.menuButtonRect.height > 51)) {
         throw new Error(`${viewport.name} menu button size drifted from the reference header: ${JSON.stringify(layout.menuButtonRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.top > 90 || layout.actionMenuRect.top < 84)) {
+      if (layout.menuOpen && viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.top > 90 || layout.actionMenuRect.top < 84)) {
         throw new Error(`${viewport.name} action menu vertical placement drifted from the reference overlay: ${JSON.stringify(layout.actionMenuRect)}`);
       }
       if (
         viewport.name === "popup" &&
-        (!layout.topicPillRect ||
+        (!layout.tabRowRect ||
           !layout.leadCardRect ||
-          layout.leadCardRect.top - layout.topicPillRect.bottom < 16 ||
-          layout.leadCardRect.top - layout.topicPillRect.bottom > 24)
+          layout.leadCardRect.top - layout.tabRowRect.bottom < 12 ||
+          layout.leadCardRect.top - layout.tabRowRect.bottom > 22)
       ) {
-        throw new Error(`${viewport.name} topic-to-card spacing drifted from the reference rhythm: ${JSON.stringify({ topic: layout.topicPillRect, lead: layout.leadCardRect })}`);
+        throw new Error(`${viewport.name} tabs-to-card spacing drifted from the compact header rhythm: ${JSON.stringify({ tabs: layout.tabRowRect, lead: layout.leadCardRect })}`);
       }
       if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.left < 21 || layout.shellRect.left > 23 || layout.shellRect.width < 454 || layout.shellRect.width > 458)) {
         throw new Error(`${viewport.name} expanded shell inset drifted from the reference image: ${JSON.stringify(layout.shellRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.heroTitleRect || layout.heroTitleRect.left < 45 || layout.heroTitleRect.left > 49)) {
-        throw new Error(`${viewport.name} hero content was too inset for the reference shell: ${JSON.stringify(layout.heroTitleRect)}`);
+      if (viewport.name === "popup" && (!layout.tabRowRect || layout.tabRowRect.left < 45 || layout.tabRowRect.left > 49)) {
+        throw new Error(`${viewport.name} tab content was too inset for the reference shell: ${JSON.stringify(layout.tabRowRect)}`);
       }
       if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.left < 34 || layout.leadCardRect.left > 36 || layout.leadCardRect.width < 430 || layout.leadCardRect.width > 434)) {
         throw new Error(`${viewport.name} lead card did not use the reference-width shell rhythm: ${JSON.stringify(layout.leadCardRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.height < 372 || layout.leadCardRect.height > 388)) {
-        throw new Error(`${viewport.name} lead card height drifted from the shorter reference rhythm: ${layout.leadCardRect && layout.leadCardRect.height}`);
+      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.height < 74 || layout.leadCardRect.height > 90)) {
+        throw new Error(`${viewport.name} lead card height drifted from the closed reference rhythm: ${layout.leadCardRect && layout.leadCardRect.height}`);
       }
-      if (viewport.name === "popup" && (!layout.leadImageRect || layout.leadImageRect.left > 50 || layout.leadImageRect.width < 86 || layout.leadImageRect.height < 86)) {
+      if (viewport.name === "popup" && (!layout.leadImageRect || layout.leadImageRect.left > 50 || layout.leadImageRect.width < 64 || layout.leadImageRect.width > 70 || layout.leadImageRect.height < 64 || layout.leadImageRect.height > 70)) {
         throw new Error(`${viewport.name} lead market image was too small for the reference card: ${JSON.stringify(layout.leadImageRect)}`);
-      }
-      if (viewport.name === "popup" && layout.footerRect && layout.footerRect.height > 48) {
-        throw new Error(`${viewport.name} footer was taller than the reference-style compact status bar: ${layout.footerRect.height}`);
       }
       if (
         viewport.name === "popup" &&
@@ -731,9 +701,6 @@ async function main() {
           layout.visualRadii.actionMenu > 17)
       ) {
         throw new Error(`${viewport.name} reference-style radii drifted: ${JSON.stringify(layout.visualRadii)}`);
-      }
-      if (!/Insights by Rainbow\s+Updated just now/.test(layout.privacyText)) {
-        throw new Error(`${viewport.name} layout missing target Rainbow footer copy: ${layout.privacyText}`);
       }
       if (!/Local scan complete/.test(layout.statusText)) {
         throw new Error(`${viewport.name} layout missing target local scan copy: ${layout.statusText}`);

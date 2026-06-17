@@ -172,6 +172,30 @@ test("flattens grouped events with markets", () => {
   assert.equal(candidates[0].sourceQueries[0], "Bitcoin");
 });
 
+test("preserves grouped market option labels from Polymarket events", () => {
+  const candidates = polymarket.flattenPayload({
+    events: [{
+      id: "world-cup-winner",
+      slug: "world-cup-winner",
+      title: "World Cup Winner",
+      active: true,
+      closed: false,
+      markets: [{
+        id: "argentina-winner",
+        question: "Will Argentina win the 2026 FIFA World Cup?",
+        groupItemTitle: "Argentina",
+        outcomes: "[\"Yes\", \"No\"]",
+        outcomePrices: "[\"0.10\", \"0.90\"]",
+        active: true,
+        closed: false
+      }]
+    }]
+  }, { query: "World Cup Winner" });
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].groupItemTitle, "Argentina");
+});
+
 test("grouped parent events preserve the top child market question for trade view", () => {
   const ranked = [
     {
@@ -199,6 +223,33 @@ test("grouped parent events preserve the top child market question for trade vie
   assert.equal(group.eventTitle, "US x Iran permanent peace deal by...?");
   assert.equal(group.question, "Will the US and Iran reach a permanent peace deal in 2026?");
   assert.equal(group.markets[0].question, "Will the US and Iran reach a permanent peace deal in 2026?");
+});
+
+test("grouped parent events keep enough child markets for option show more", () => {
+  const countries = ["Argentina", "Spain", "Brazil", "France", "England", "Germany", "Portugal", "Japan"];
+  const ranked = countries.map((country, index) => ({
+    ...polymarket.normalizeMarket({
+      id: `world-cup-${country.toLowerCase()}`,
+      question: `Will ${country} win the 2026 FIFA World Cup?`,
+      groupItemTitle: country,
+      outcomes: "[\"Yes\", \"No\"]",
+      outcomePrices: [`0.0${index + 1}`, `0.9${index + 1}`],
+      active: true,
+      closed: false
+    }, {
+      id: "world-cup-winner",
+      slug: "world-cup-winner",
+      title: "World Cup Winner",
+      active: true,
+      closed: false
+    }),
+    confidence: 80 - index
+  }));
+
+  const [group] = polymarket.groupCandidatesByEvent(ranked, { maxGroups: 5 });
+
+  assert.equal(group.markets.length, 8);
+  assert.deepEqual(group.markets.slice(0, 2).map((market) => market.groupItemTitle), ["Argentina", "Spain"]);
 });
 
 test("normalizes Polymarket image variants from market and event payloads", () => {

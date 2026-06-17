@@ -9,6 +9,8 @@
 })(typeof window !== "undefined" ? window : globalThis, function createRenderer() {
   "use strict";
 
+  const EXPANDED_ROW_PREVIEW_LIMIT = 6;
+
   function clear(node) {
     node.replaceChildren();
   }
@@ -18,6 +20,10 @@
       return fallback;
     }
     return String(value);
+  }
+
+  function cleanLabel(value) {
+    return text(value).replace(/\s+/g, " ").trim();
   }
 
   function renderStatus(root, phase, title, detail) {
@@ -104,9 +110,7 @@
   }
 
   function formatExpiry(candidate) {
-    const raw = candidate.raw || {};
-    const event = candidate.event || {};
-    const value = candidate.endDate || candidate.endDateIso || raw.endDate || raw.endDateIso || raw.endDateTime || event.endDate || event.endDateIso || event.endDateTime;
+    const value = endDateValue(candidate);
     if (!value) {
       return "Active market";
     }
@@ -368,6 +372,24 @@
       .slice(0, 3);
   }
 
+  function groupedOptionLabel(candidate = {}) {
+    const raw = candidate.raw || {};
+    for (const value of [
+      candidate.groupItemTitle,
+      raw.groupItemTitle,
+      raw.groupItemLabel,
+      raw.groupItemName,
+      raw.groupTitle,
+      raw.outcomeTitle
+    ]) {
+      const label = cleanLabel(value);
+      if (label) {
+        return label;
+      }
+    }
+    return "";
+  }
+
   function percentNumber(outcome) {
     if (!outcome) {
       return null;
@@ -487,51 +509,21 @@
     mark.className = "source-mark";
     mark.setAttribute("aria-hidden", "true");
     mark.append(createSourceIcon(source));
-    const label = document.createElement("span");
-    label.className = "source-label";
-    label.textContent = source;
-    badge.append(mark, label);
+    badge.append(mark);
     return badge;
   }
 
   function createSourceIcon(source) {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 32 32");
-    svg.setAttribute("aria-hidden", "true");
-    if (source === "Hyperliquid") {
-      const left = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      left.setAttribute("x", "6");
-      left.setAttribute("y", "12");
-      left.setAttribute("width", "13");
-      left.setAttribute("height", "7");
-      left.setAttribute("rx", "3.5");
-      left.setAttribute("fill", "currentColor");
-      left.setAttribute("transform", "rotate(42 12.5 15.5)");
-      const right = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      right.setAttribute("x", "13");
-      right.setAttribute("y", "12");
-      right.setAttribute("width", "13");
-      right.setAttribute("height", "7");
-      right.setAttribute("rx", "3.5");
-      right.setAttribute("fill", "currentColor");
-      right.setAttribute("transform", "rotate(-42 19.5 15.5)");
-      svg.append(left, right);
-      return svg;
-    }
-
-    const outer = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    outer.setAttribute("d", "M8 7.5 23 3.5c.8-.2 1.5.4 1.5 1.2v22.6c0 .8-.8 1.4-1.5 1.1L8 23.5v-16Z");
-    const cross = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    cross.setAttribute("d", "M8.5 15.8h15.4M8.7 7.8l15.2 8");
-    for (const path of [outer, cross]) {
-      path.setAttribute("fill", "none");
-      path.setAttribute("stroke", "currentColor");
-      path.setAttribute("stroke-width", "2.2");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-      svg.append(path);
-    }
-    return svg;
+    const image = document.createElement("img");
+    image.className = "source-logo";
+    image.alt = "";
+    image.decoding = "async";
+    image.loading = "eager";
+    image.src = source === "Hyperliquid"
+      ? "assets/hyperliquid-symbol.svg"
+      : "assets/polymarket-icon.svg";
+    image.setAttribute("aria-hidden", "true");
+    return image;
   }
 
   function safeHttpUrl(value) {
@@ -1345,27 +1337,31 @@
     return outcomes.slice(2);
   }
 
-  function expandedRows(candidate) {
-    const displayRows = marketDisplayDetailRows(candidate);
-    if (displayRows.length) {
-      return displayRows;
-    }
-
+  function expandedRowItems(candidate) {
     const markets = Array.isArray(candidate.markets) ? candidate.markets : [];
-    if (markets.length > 1) {
-      return markets.slice(0, 5).map((market) => {
+    const singleMarket = markets.length === 1 ? markets[0] : null;
+    if (markets.length > 1 || (singleMarket && endDateValue(singleMarket))) {
+      return markets.map((market) => {
         const marketDisplayRows = marketDisplayDetailRows(market);
-        if (marketDisplayRows.length) {
-          return marketDisplayRows[0];
-        }
         const outcomes = candidateOutcomeOptions(market);
         const primary = outcomes[0] || { label: "Yes", price: market.primaryPrice, percent: market.primaryPercent };
+        const optionLabel = groupedOptionLabel(market);
+        const dateLabel = compactDate(endDateValue(market));
+        const displayRow = marketDisplayRows[0] || null;
         return {
-          label: compactDate(market.endDate || market.endDateIso || (market.raw && (market.raw.endDate || market.raw.endDateIso || market.raw.endDateTime))) || market.title || primary.label,
-          value: outcomeValue(primary),
-          movement: market.movement
+          label: optionLabel || dateLabel || market.title || primary.label,
+          value: displayRow ? displayRow.value : outcomeValue(primary),
+          movement: displayRow ? displayRow.movement : market.movement,
+          marketKey: marketKey(market)
         };
       });
+    }
+    const displayRows = marketDisplayDetailRows(candidate);
+    if (displayRows.length) {
+      return displayRows.map((row) => ({
+        ...row,
+        marketKey: singleMarket ? marketKey(singleMarket) : undefined
+      }));
     }
     return candidateOutcomeOptions(candidate).slice(0, 5).map((outcome) => ({
       label: outcome.label,
@@ -1374,7 +1370,38 @@
     }));
   }
 
-  function appendExpandedCardContents(card, candidate, titleText) {
+  function showAllExpandedRows(candidate, options = {}) {
+    const key = marketKey(candidate);
+    const keys = options.expandedRowKeys;
+    if (!key || !keys) {
+      return false;
+    }
+    if (keys instanceof Set) {
+      return keys.has(key);
+    }
+    if (Array.isArray(keys)) {
+      return keys.map(String).includes(key);
+    }
+    return String(keys) === key;
+  }
+
+  function expandedRows(candidate, options = {}) {
+    const rows = expandedRowItems(candidate);
+    if (showAllExpandedRows(candidate, options) || rows.length <= EXPANDED_ROW_PREVIEW_LIMIT) {
+      return {
+        rows,
+        hiddenCount: 0,
+        totalCount: rows.length
+      };
+    }
+    return {
+      rows: rows.slice(0, EXPANDED_ROW_PREVIEW_LIMIT),
+      hiddenCount: rows.length - EXPANDED_ROW_PREVIEW_LIMIT,
+      totalCount: rows.length
+    };
+  }
+
+  function appendExpandedCardContents(card, candidate, titleText, options = {}) {
     const top = document.createElement("div");
     top.className = "market-expanded-top";
     top.append(createMarketImage(candidate));
@@ -1387,7 +1414,8 @@
     copy.append(title, createSourceBadge(candidate));
     top.append(copy);
 
-    const rowItems = expandedRows(candidate);
+    const rowState = expandedRows(candidate, options);
+    const rowItems = rowState.rows;
     card.dataset.expandedRowCount = String(rowItems.length);
 
     const rows = document.createElement("div");
@@ -1395,9 +1423,12 @@
     for (const item of rowItems) {
       const row = document.createElement("div");
       row.className = "market-scenario-row";
-      const dot = document.createElement("span");
-      dot.className = "scenario-dot";
-      dot.setAttribute("aria-hidden", "true");
+      if (item.marketKey) {
+        row.dataset.marketRowKey = item.marketKey;
+        row.setAttribute("role", "button");
+        row.setAttribute("tabindex", "0");
+        row.setAttribute("aria-label", `Open trade view for ${item.label}`);
+      }
       const label = document.createElement("span");
       label.className = "scenario-label";
       label.textContent = item.label;
@@ -1408,13 +1439,36 @@
       value.textContent = item.value;
       valueWrap.append(value);
       appendMovement(valueWrap, item.movement, { reserveSpace: true });
-      row.append(dot, label, valueWrap);
+      row.append(label, valueWrap);
       rows.append(row);
+    }
+    if (rowState.hiddenCount > 0) {
+      const showMore = document.createElement("div");
+      showMore.className = "market-scenario-row market-show-more-row";
+      showMore.dataset.marketShowMoreKey = marketKey(candidate);
+      showMore.setAttribute("role", "button");
+      showMore.setAttribute("tabindex", "0");
+      showMore.setAttribute("aria-label", `Show ${rowState.hiddenCount} more options for ${titleText}`);
+      const label = document.createElement("span");
+      label.className = "scenario-label";
+      label.textContent = "Show more";
+      const valueWrap = document.createElement("span");
+      valueWrap.className = "scenario-value-wrap scenario-value-wrap-more";
+      const value = document.createElement("strong");
+      value.className = "scenario-value scenario-more-count";
+      value.textContent = `+${rowState.hiddenCount}`;
+      valueWrap.append(value);
+      showMore.append(label, valueWrap);
+      rows.append(showMore);
     }
 
     const caret = document.createElement("span");
     caret.className = "market-expanded-caret";
-    caret.setAttribute("aria-hidden", "true");
+    caret.dataset.marketToggle = "true";
+    caret.setAttribute("role", "button");
+    caret.setAttribute("tabindex", "0");
+    caret.setAttribute("aria-label", "Collapse market details");
+    caret.setAttribute("aria-expanded", "true");
 
     card.append(top, caret, rows);
   }
@@ -1439,7 +1493,11 @@
 
     const chevron = document.createElement("span");
     chevron.className = "market-chevron";
-    chevron.setAttribute("aria-hidden", "true");
+    chevron.dataset.marketToggle = "true";
+    chevron.setAttribute("role", "button");
+    chevron.setAttribute("tabindex", "0");
+    chevron.setAttribute("aria-label", "Expand market details");
+    chevron.setAttribute("aria-expanded", "false");
     card.append(main, quote, chevron);
   }
 
@@ -1447,7 +1505,7 @@
     const titleText = options.titleText || candidate.eventTitle || candidate.title || candidate.question || "Untitled market";
 
     if (options.expanded) {
-      appendExpandedCardContents(card, candidate, titleText);
+      appendExpandedCardContents(card, candidate, titleText, options);
       return;
     }
     appendCompactCardContents(card, candidate, titleText, options);
@@ -1467,15 +1525,16 @@
     return card;
   }
 
-  function createParentEventCard(candidate, index = 0) {
+  function createParentEventCard(candidate, options = {}) {
     const childCount = Array.isArray(candidate.markets) ? candidate.markets.length : 0;
     const card = createMarketCard(candidate, {
+      ...options,
       parent: true,
-      expanded: index === 0,
+      expanded: Boolean(options.expanded),
       titleText: candidate.eventTitle || candidate.title || candidate.question || "Untitled event",
       childCount
     });
-    card.setAttribute("aria-label", `Trade ${candidate.eventTitle || candidate.title || "market"} from ${sourceName(candidate)}`);
+    card.setAttribute("aria-label", `Expand or collapse ${candidate.eventTitle || candidate.title || "market"} from ${sourceName(candidate)}`);
     return card;
   }
 
@@ -1496,9 +1555,30 @@
   }
 
   function clearMarketSurface(root) {
-    for (const existing of root.querySelectorAll(".markets-heading, .market-card, .match-limit-note, .empty-state, .error-state, .trade-view")) {
+    root.classList.remove("is-loading");
+    for (const existing of root.querySelectorAll(".markets-heading, .market-card, .match-limit-note, .empty-state, .error-state, .trade-view, .loading-state")) {
       existing.remove();
     }
+  }
+
+  function renderLoading(root, title = "Finding related markets") {
+    clearMarketSurface(root);
+    root.classList.add("is-loading");
+
+    const state = document.createElement("section");
+    state.className = "loading-state";
+    state.setAttribute("role", "status");
+    state.setAttribute("aria-live", "polite");
+
+    const loader = document.createElement("div");
+    loader.className = "loader";
+    loader.setAttribute("aria-hidden", "true");
+
+    const strong = document.createElement("strong");
+    strong.textContent = title;
+
+    state.append(loader, strong);
+    root.append(state);
   }
 
   function renderHeading(root, title, detail) {
@@ -1522,10 +1602,20 @@
     clearMarketSurface(root);
     const groups = groupRenderCandidates(candidates);
     const matchLimit = Number.isFinite(Number(options.matchLimit)) ? Number(options.matchLimit) : 3;
+    const hasExpandedKey = Object.prototype.hasOwnProperty.call(options, "expandedMarketKey");
+    const expandedMarketKey = hasExpandedKey && options.expandedMarketKey
+      ? String(options.expandedMarketKey)
+      : "";
     renderHeading(root, options.title || "Related markets", options.detail || "Best match");
     const fragment = document.createDocumentFragment();
-    for (const [index, candidate] of groups.entries()) {
-      fragment.append(createParentEventCard(candidate, index));
+    for (const candidate of groups) {
+      const expanded = hasExpandedKey
+        ? Boolean(expandedMarketKey && marketKey(candidate) === expandedMarketKey)
+        : false;
+      fragment.append(createParentEventCard(candidate, {
+        expanded,
+        expandedRowKeys: options.expandedRowKeys
+      }));
     }
     if (groups.length >= matchLimit && options.showMatchLimitNote !== false) {
       fragment.append(createMatchLimitNote());
@@ -1650,6 +1740,7 @@
     renderArticleContext,
     renderResults,
     renderTradeView,
+    renderLoading,
     renderEmpty,
     renderError,
     marketKey,

@@ -7,19 +7,69 @@
     <link rel="stylesheet" href="./popup.css">
   </head>
   <body>
-    <main class="popup-shell is-menu-open">
+    <main class="popup-shell">
       <header class="rainbow-topbar">
-        <button class="trade-toggle" id="trade-toggle-button" type="button" aria-pressed="false">
-          <span class="trade-switch" aria-hidden="true"></span>
-          <span>Trade</span>
-        </button>
-        <div class="menu-wrap">
-          <button class="menu-button" id="menu-button" type="button" title="Menu" aria-label="Menu" aria-haspopup="menu" aria-controls="action-menu" aria-expanded="true">
-            <span aria-hidden="true"></span>
-            <span aria-hidden="true"></span>
-            <span aria-hidden="true"></span>
+        <form class="market-search" id="market-search-form" role="search">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m16.2 16.2 4.3 4.3" />
+          </svg>
+          <input id="market-search-input" type="search" placeholder="Search markets" autocomplete="off" spellcheck="false" aria-label="Search markets">
+          <button class="search-filter-button" id="market-search-button" type="submit" title="Search markets" aria-label="Search markets">
+            <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16" />
+              <path d="M4 17h16" />
+              <path d="M9 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z" />
+              <path d="M19 17a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z" />
+            </svg>
           </button>
-          <div class="action-menu" id="action-menu" role="menu" aria-hidden="false">
+        </form>
+        <div class="menu-wrap">
+          <button class="menu-button" id="menu-button" type="button" title="Profile menu" aria-label="Profile menu" aria-haspopup="menu" aria-controls="action-menu" aria-expanded="false">
+            <svg class="profile-avatar" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+              <defs>
+                <radialGradient id="profile-avatar-shell" cx="36%" cy="18%" r="72%">
+                  <stop offset="0%" stop-color="#4b545f" />
+                  <stop offset="48%" stop-color="#2b333d" />
+                  <stop offset="100%" stop-color="#151a21" />
+                </radialGradient>
+                <linearGradient id="profile-avatar-head" x1="31" y1="14" x2="31" y2="31" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#f0f4fa" />
+                  <stop offset="54%" stop-color="#b8c1ce" />
+                  <stop offset="100%" stop-color="#8793a4" />
+                </linearGradient>
+                <linearGradient id="profile-avatar-body" x1="31" y1="32" x2="31" y2="54" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#d3dae5" />
+                  <stop offset="60%" stop-color="#8f9aad" />
+                  <stop offset="100%" stop-color="#667286" />
+                </linearGradient>
+                <linearGradient id="profile-avatar-status" x1="50" y1="43" x2="50" y2="55" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#6df4a4" />
+                  <stop offset="100%" stop-color="#24c96e" />
+                </linearGradient>
+                <clipPath id="profile-avatar-clip">
+                  <circle cx="31" cy="31" r="21.6" />
+                </clipPath>
+              </defs>
+              <circle class="profile-avatar-outer-ring" cx="31" cy="31" r="28" />
+              <circle class="profile-avatar-mid-ring" cx="31" cy="31" r="24" />
+              <circle class="profile-avatar-disc" cx="31" cy="31" r="21.6" />
+              <g clip-path="url(#profile-avatar-clip)">
+                <circle class="profile-avatar-head" cx="31" cy="23" r="7.2" />
+                <path class="profile-avatar-body" d="M13.5 52.5C15.2 40.8 22 34.6 31 34.6s15.8 6.2 17.5 17.9Z" />
+              </g>
+              <circle class="profile-avatar-status-ring" cx="50" cy="49" r="8" />
+              <circle class="profile-avatar-status-core" cx="50" cy="49" r="5" />
+            </svg>
+          </button>
+          <div class="action-menu" id="action-menu" role="menu" aria-hidden="true">
+            <button class="action-menu-item profile-menu-item" id="profile-button" type="button" role="menuitem">
+              <span class="menu-avatar-icon" aria-hidden="true">
+                <span class="menu-avatar-head"></span>
+                <span class="menu-avatar-body"></span>
+              </span>
+              <span>Profile</span>
+            </button>
             <button class="action-menu-item" id="settings-button" type="button" role="menuitem">
               <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 15.4a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8Z" />
@@ -47,65 +97,17 @@
         </div>
       </header>
 
-      <section class="hero-region" aria-label="Market context">
-        <h1>Relevant Markets</h1>
-        <div class="detected-topic-pill">
-          <svg class="topic-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="5" />
-            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-          </svg>
-          <span id="detected-topic-text">Detected topic: scanning article</span>
-        </div>
+      <section class="hero-region" aria-label="Market views">
+        <nav class="market-tabs" aria-label="Market views">
+          <button class="tab-button is-active" id="related-tab" type="button" data-tab="related">Relevant Markets</button>
+          <button class="tab-button" id="trending-tab" type="button" data-tab="trending">Trending</button>
+          <button class="tab-button" id="watchlist-tab" type="button" data-tab="watchlist">Watchlist</button>
+        </nav>
       </section>
-
-      <form class="market-search utility-control" id="market-search-form" role="search" aria-hidden="true">
-        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="m16.2 16.2 4.3 4.3" />
-        </svg>
-        <input id="market-search-input" type="search" placeholder="Search any market" autocomplete="off" spellcheck="false" aria-label="Search markets" tabindex="-1">
-        <button class="search-filter-button" id="market-search-button" type="submit" title="Search markets" aria-label="Search markets" tabindex="-1">
-          <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16" />
-            <path d="M4 17h16" />
-            <path d="M9 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z" />
-            <path d="M19 17a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z" />
-          </svg>
-        </button>
-      </form>
 
       <section id="status-region" class="status-region" aria-live="polite"></section>
       <section id="surface-message" class="surface-message" role="status" aria-live="polite" hidden></section>
-      <nav class="market-tabs utility-control" aria-label="Market views" aria-hidden="true">
-        <button class="tab-button is-active" id="related-tab" type="button" data-tab="related" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="7" />
-            <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
-          </svg>
-          Related
-        </button>
-        <button class="tab-button" id="trending-tab" type="button" data-tab="trending" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M13.5 2.6C10 5.5 8.3 8.5 8.3 11.5c0 .7.1 1.4.4 2-.8-.5-1.3-1.3-1.5-2.5C5.8 12.5 5 14.1 5 16a7 7 0 0 0 14 0c0-2.8-1.7-4.5-3.1-6.1-1.2-1.4-2.2-2.8-2.4-7.3Z" />
-            <path d="M11.1 17.7a2.9 2.9 0 0 0 5.3-1.6c0-1.4-.9-2.3-1.7-3.2-.6-.7-1.1-1.4-1.2-2.7-1.5 1.3-2.3 2.6-2.3 3.9 0 .5.1.9.3 1.3-.5-.3-.9-.8-1-1.5-.7.7-1 1.4-1 2.2 0 .6.2 1.2.6 1.6Z" />
-          </svg>
-          Trending
-        </button>
-        <button class="tab-button" id="search-tab" type="button" data-tab="search" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m16.2 16.2 4.3 4.3" />
-          </svg>
-          Search
-        </button>
-      </nav>
       <section id="results-region" class="results-region" aria-label="Prediction market matches"></section>
-
-      <footer class="privacy-footer">
-        <span class="rainbow-mark" aria-hidden="true"></span>
-        <span>Insights by <strong>Rainbow</strong></span>
-        <span class="footer-updated">Updated just now <span class="live-dot" aria-hidden="true"></span></span>
-      </footer>
     </main>
 
     <script src="../lib/articleSignals.js"></script>

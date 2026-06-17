@@ -32,25 +32,31 @@ function waitFor(condition, label) {
   });
 }
 
-function setupPopup({ extractResult, searchResult, searchError, tradeDataResult, hyperliquidResult, hyperliquidError, enrichGroups, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
+function setupPopup({ extractResult, searchResult, searchError, tradeDataResult, hyperliquidResult, hyperliquidError, enrichGroups, runtimeManifest, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
   const dom = new JSDOM(`<!doctype html><body>
-    <main class="popup-shell is-menu-open">
+    <main class="popup-shell">
+    <header class="rainbow-topbar">
+    <form id="market-search-form">
+      <input id="market-search-input" type="search">
+      <button id="market-search-button" type="submit"></button>
+    </form>
     <div class="menu-wrap">
-    <button id="menu-button" type="button" aria-expanded="true"></button>
-    <div class="action-menu" id="action-menu" role="menu" aria-hidden="false">
+    <button id="menu-button" type="button" aria-expanded="false"></button>
+    <div class="action-menu" id="action-menu" role="menu" aria-hidden="true">
+    <button class="action-menu-item" id="profile-button" type="button" role="menuitem"></button>
     <button class="action-menu-item" id="settings-button" type="button" role="menuitem"></button>
     <button class="action-menu-item" id="refresh-button" type="button" role="menuitem"></button>
     <button class="action-menu-item" id="privacy-info-button" type="button" role="menuitem"></button>
     </div>
     </div>
-    <button id="trade-toggle-button" type="button" aria-pressed="false"></button>
-    <form id="market-search-form">
-      <input id="market-search-input" type="search">
-      <button id="market-search-button" type="submit"></button>
-    </form>
-    <button class="tab-button is-active" id="related-tab" type="button"></button>
-    <button class="tab-button" id="trending-tab" type="button"></button>
-    <button class="tab-button" id="search-tab" type="button"></button>
+    </header>
+    <section class="hero-region">
+      <nav class="market-tabs">
+        <button class="tab-button is-active" id="related-tab" type="button" data-tab="related">Relevant Markets</button>
+        <button class="tab-button" id="trending-tab" type="button" data-tab="trending">Trending</button>
+        <button class="tab-button" id="watchlist-tab" type="button" data-tab="watchlist">Watchlist</button>
+      </nav>
+    </section>
     <section id="status-region"></section>
     <section id="surface-message" hidden></section>
     <section id="results-region"></section>
@@ -70,6 +76,7 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
     executeScript: [],
     analyzeOptions: [],
     articleSearches: [],
+    loading: [],
     groupCandidates: [],
     traderEnrichments: [],
     marketSearches: [],
@@ -80,7 +87,8 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
     hyperliquidTrendingSearches: [],
     hyperliquidGroupCandidates: [],
     tradeViews: [],
-    openedTabs: []
+    openedTabs: [],
+    reloads: []
   };
 
   function stubMarketKey(candidate = {}) {
@@ -105,6 +113,10 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
       calls.tradeViews.push(candidate);
       realRenderer.renderTradeView(root, candidate);
     },
+    renderLoading(root, title, detail) {
+      calls.loading.push({ title, detail });
+      realRenderer.renderLoading(root, title, detail);
+    },
     renderEmpty(root, title, detail, options) {
       calls.empty.push({ title, detail, options });
       realRenderer.renderEmpty(root, title, detail, options);
@@ -126,13 +138,25 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
     renderResults(root, candidates, options) {
       calls.results.push({ candidates, options });
       root.innerHTML = "";
+      const hasExpandedKey = Object.prototype.hasOwnProperty.call(options || {}, "expandedMarketKey");
+      const expandedKey = hasExpandedKey ? options.expandedMarketKey : "";
       for (const candidate of candidates) {
         const card = dom.window.document.createElement("a");
         card.className = "market-card";
+        if (expandedKey && stubMarketKey(candidate) === expandedKey) {
+          card.classList.add("market-card-expanded");
+        }
         card.href = `#trade-${stubMarketKey(candidate)}`;
         card.dataset.marketKey = stubMarketKey(candidate);
         card.dataset.marketUrl = candidate.url || "https://polymarket.com";
         card.textContent = candidate.title || candidate.eventTitle || "Market";
+        if (card.classList.contains("market-card-expanded")) {
+          const row = dom.window.document.createElement("div");
+          row.className = "market-scenario-row";
+          row.dataset.marketRowKey = stubMarketKey(candidate);
+          row.textContent = "June 30";
+          card.append(row);
+        }
         root.append(card);
       }
     },
@@ -160,6 +184,10 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
           <div data-trade-book-side="bid"><div class="trade-book-row"><span>31c</span><span>1</span><span>1</span></div></div>
           <div data-trade-book-side="ask"><div class="trade-book-row"><span>33c</span><span>1</span><span>1</span></div></div>
         </section>`;
+    },
+    renderLoading(root, title, detail) {
+      calls.loading.push({ title, detail });
+      root.innerHTML = `<section class="loading-state"><div class="loader"></div><strong>${title}</strong>${detail ? `<p>${detail}</p>` : ""}</section>`;
     },
     renderEmpty(_root, title, detail, options) {
       calls.empty.push({ title, detail, options });
@@ -286,6 +314,16 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
       }
     }
   };
+  if (runtimeManifest) {
+    chromeMock.runtime = {
+      getManifest() {
+        return runtimeManifest;
+      },
+      reload() {
+        calls.reloads.push(true);
+      }
+    };
+  }
 
   global.window = dom.window;
   global.document = dom.window.document;
@@ -308,6 +346,21 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
     calls,
     refreshButton: dom.window.document.getElementById("refresh-button")
   };
+}
+
+function clickNode(dom, node) {
+  assert.ok(node);
+  node.dispatchEvent(new dom.window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true
+  }));
+}
+
+function clickFirstTradeRow(dom) {
+  if (!dom.window.document.querySelector("[data-market-row-key]")) {
+    clickNode(dom, dom.window.document.querySelector(".market-card"));
+  }
+  clickNode(dom, dom.window.document.querySelector("[data-market-row-key]"));
 }
 
 test("popup controller runs extraction, signal analysis, search, and result rendering in order", async () => {
@@ -348,6 +401,94 @@ test("popup controller runs extraction, signal analysis, search, and result rend
   assert.equal(calls.errors.length, 0);
 });
 
+test("popup controller shows finding-related-markets loader while related search is pending", async () => {
+  let resolveSearch;
+  const pendingSearch = new Promise((resolve) => {
+    resolveSearch = resolve;
+  });
+  const { calls, refreshButton } = setupPopup({
+    searchResult: () => pendingSearch
+  });
+
+  await waitFor(() => calls.loading.length === 1, "related search loading state");
+
+  assert.equal(refreshButton.disabled, true);
+  assert.equal(calls.loading[0].title, "Finding related markets");
+
+  resolveSearch([]);
+  await waitFor(() => refreshButton.disabled === false && calls.empty.length === 1, "related search completion");
+});
+
+test("legacy detached launcher reloads stale manifest before searching", async () => {
+  const { calls } = setupPopup({
+    runtimeManifest: { action: {} },
+    url: "chrome-extension://extension-id/src/popup/popup.html?expanded=1&sourceTabId=123"
+  });
+
+  await waitFor(() => calls.reloads.length === 1, "legacy detached launcher reload");
+
+  assert.equal(calls.executeScript.length, 0);
+  assert.deepEqual(calls.statuses.at(-1), {
+    phase: "reading",
+    title: "Updating popup",
+    detail: "Reloading the toolbar popup."
+  });
+  assert.equal(calls.loading.at(-1).title, "Updating popup");
+});
+
+test("results scroll smoothly collapses the visible heading", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "btc",
+    title: "Will Bitcoin hit $150k?"
+  });
+  const { dom, calls, refreshButton } = setupPopup({
+    url: "chrome-extension://extension-id/src/popup/popup.html?expanded=1",
+    searchResult: [candidate]
+  });
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "expanded popup initial render");
+
+  const document = dom.window.document;
+  const shell = document.querySelector(".popup-shell");
+  const topbar = document.querySelector(".rainbow-topbar");
+  const hero = document.querySelector(".hero-region");
+  const results = document.getElementById("results-region");
+
+  results.scrollTop = 24;
+  results.dispatchEvent(new dom.window.Event("scroll"));
+
+  await waitFor(() => {
+    const topbarHeight = Number.parseFloat(topbar.style.getPropertyValue("--topbar-height"));
+    const topbarOpacity = Number.parseFloat(topbar.style.getPropertyValue("--topbar-opacity"));
+    const height = Number.parseFloat(hero.style.getPropertyValue("--hero-height"));
+    const opacity = Number.parseFloat(hero.style.getPropertyValue("--hero-opacity"));
+    return topbarHeight > 0 &&
+      topbarHeight < 48 &&
+      topbarOpacity > 0 &&
+      topbarOpacity < 1 &&
+      height > 0 &&
+      height < 48 &&
+      opacity > 0 &&
+      opacity < 1;
+  }, "partially collapsed heading");
+
+  results.scrollTop = 72;
+  results.dispatchEvent(new dom.window.Event("scroll"));
+
+  await waitFor(() => shell.classList.contains("is-results-scrolled"), "collapsed heading class");
+  assert.equal(topbar.style.getPropertyValue("--topbar-height"), "0px");
+  assert.equal(topbar.style.getPropertyValue("--topbar-opacity"), "0");
+  assert.equal(hero.style.getPropertyValue("--hero-height"), "0px");
+  assert.equal(hero.style.getPropertyValue("--hero-opacity"), "0");
+
+  results.scrollTop = 0;
+  results.dispatchEvent(new dom.window.Event("scroll"));
+
+  await waitFor(() => !shell.classList.contains("is-results-scrolled") && hero.style.getPropertyValue("--hero-opacity") === "1", "restored heading");
+  assert.equal(topbar.style.getPropertyValue("--topbar-height"), "48px");
+  assert.equal(hero.style.getPropertyValue("--hero-height"), "48px");
+});
+
 test("popup refresh reruns local model analysis", async () => {
   const candidate = makeBinaryCandidate({
     id: "btc",
@@ -364,28 +505,168 @@ test("popup refresh reruns local model analysis", async () => {
   assert.deepEqual(calls.analyzeOptions.map((options) => options.analysisStrategy), ["classifier", "classifier"]);
 });
 
-test("clicking a rendered market opens the internal trade view", async () => {
+test("clicking a rendered market toggles it while clicking a date row opens trade view", async () => {
   const candidate = makeBinaryCandidate({
     id: "btc",
+    eventId: "btc-event",
     title: "Will Bitcoin hit $150k?",
     confidence: 70,
-    url: "https://polymarket.com/event/bitcoin"
+    url: "https://polymarket.com/event/bitcoin",
+    endDate: "2026-06-30T00:00:00.000Z"
   });
-  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate] });
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate], useRealRenderer: true });
   const document = dom.window.document;
   const shell = document.querySelector(".popup-shell");
 
-  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
+  await waitFor(() => refreshButton.disabled === false && document.querySelector(".market-card"), "initial popup run");
+  assert.equal(document.querySelector(".market-card-expanded"), null);
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickNode(dom, document.querySelector(".market-card"));
+
+  assert.equal(calls.tradeViews.length, 0);
+  assert.ok(document.querySelector(".market-card-expanded"));
+
+  clickNode(dom, document.querySelector(".market-card"));
+
+  assert.equal(document.querySelector(".market-card-expanded"), null);
+
+  clickNode(dom, document.querySelector(".market-card"));
+
+  await waitFor(() => document.querySelector(".market-card-expanded"), "card re-expansion");
+  assert.equal(calls.tradeViews.length, 0);
+
+  clickFirstTradeRow(dom);
 
   assert.equal(calls.tradeViews.length, 1);
   assert.equal(calls.tradeViews[0].id, "btc");
   assert.equal(shell.classList.contains("is-trade-view"), true);
   assert.equal(calls.statuses.at(-1).title, "Trade view");
+});
+
+test("market expansion animates between measured card heights", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "btc",
+    eventId: "btc-event",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    url: "https://polymarket.com/event/bitcoin",
+    endDate: "2026-06-30T00:00:00.000Z"
+  });
+  const { dom, refreshButton } = setupPopup({ searchResult: [candidate], useRealRenderer: true });
+  const document = dom.window.document;
+  const proto = dom.window.HTMLElement.prototype;
+  const originalGetBoundingClientRect = proto.getBoundingClientRect;
+
+  function rect(height) {
+    return {
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 420,
+      bottom: height,
+      width: 420,
+      height,
+      toJSON() {
+        return this;
+      }
+    };
+  }
+
+  await waitFor(() => refreshButton.disabled === false && document.querySelector(".market-card"), "initial popup run");
+
+  proto.getBoundingClientRect = function getBoundingClientRect() {
+    if (this.classList && this.classList.contains("market-card")) {
+      return rect(this.classList.contains("market-card-expanded") ? 260 : 80);
+    }
+    return originalGetBoundingClientRect.call(this);
+  };
+
+  try {
+    clickNode(dom, document.querySelector(".market-card"));
+
+    const expandedCard = document.querySelector(".market-card-expanded");
+    assert.ok(expandedCard);
+    assert.equal(expandedCard.style.height, "80px");
+    assert.equal(expandedCard.style.overflow, "hidden");
+    assert.ok(expandedCard.classList.contains("market-card-height-transition"));
+    assert.ok(expandedCard.classList.contains("is-expanding"));
+
+    await waitFor(() => expandedCard.style.height === "260px", "expanded card target height");
+  } finally {
+    proto.getBoundingClientRect = originalGetBoundingClientRect;
+  }
+});
+
+test("clicking show more reveals all grouped options without opening trade view", async () => {
+  const countries = ["Argentina", "Spain", "Brazil", "France", "England", "Germany", "Portugal", "Japan"];
+  const candidates = countries.map((country, index) => makeBinaryCandidate({
+    id: `world-cup-${country.toLowerCase()}`,
+    eventId: "world-cup-winner",
+    eventTitle: "World Cup Winner",
+    title: `Will ${country} win the 2026 FIFA World Cup?`,
+    groupItemTitle: country,
+    raw: { groupItemTitle: country },
+    endDate: "2026-07-20T00:00:00.000Z",
+    primaryPercent: index === 0 ? 10 : index,
+    confidence: 80 - index,
+    url: `https://polymarket.com/event/world-cup-winner/${country.toLowerCase()}`
+  }));
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: candidates, useRealRenderer: true });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && document.querySelector(".market-card"), "initial popup run");
+
+  clickNode(dom, document.querySelector(".market-card"));
+  await waitFor(() => document.querySelector(".market-card-expanded"), "expanded group");
+
+  assert.equal(document.querySelectorAll(".market-scenario-row[data-market-row-key]").length, 6);
+  assert.ok(document.querySelector("[data-market-show-more-key]"));
+
+  clickNode(dom, document.querySelector("[data-market-show-more-key]"));
+
+  assert.equal(calls.tradeViews.length, 0);
+  assert.ok(document.querySelector(".market-card-expanded"));
+  assert.equal(document.querySelectorAll(".market-scenario-row[data-market-row-key]").length, 8);
+  assert.equal(document.querySelector("[data-market-show-more-key]"), null);
+});
+
+test("clicking a market chevron toggles expansion without opening trade view", async () => {
+  const first = makeBinaryCandidate({
+    id: "first",
+    eventId: "first",
+    title: "First market",
+    confidence: 70,
+    url: "https://polymarket.com/event/first",
+    endDate: "2026-09-29T00:00:00.000Z"
+  });
+  const second = makeBinaryCandidate({
+    id: "second",
+    eventId: "second",
+    title: "Second market",
+    confidence: 69,
+    url: "https://polymarket.com/event/second",
+    endDate: "2026-12-30T00:00:00.000Z"
+  });
+  const { dom, calls, refreshButton } = setupPopup({
+    searchResult: [first, second],
+    useRealRenderer: true
+  });
+  const document = dom.window.document;
+
+  await waitFor(() => refreshButton.disabled === false && document.querySelectorAll(".market-card").length === 2, "initial popup run");
+
+  const secondCard = document.querySelectorAll(".market-card")[1];
+  clickNode(dom, secondCard.querySelector("[data-market-toggle]"));
+
+  await waitFor(() => document.querySelectorAll(".market-card")[1].classList.contains("market-card-expanded"), "second card expansion");
+  assert.equal(document.querySelectorAll(".market-card-expanded").length, 1);
+  assert.equal(calls.tradeViews.length, 0);
+
+  clickNode(dom, document.querySelectorAll(".market-card")[1]);
+
+  assert.equal(calls.tradeViews.length, 0);
+  assert.equal(document.querySelector(".market-card-expanded"), null);
 });
 
 test("trade action menu exposes the reference Settings Connect Information actions", async () => {
@@ -400,10 +681,7 @@ test("trade action menu exposes the reference Settings Connect Information actio
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickFirstTradeRow(dom);
   document.querySelector("[data-trade-menu]").dispatchEvent(new dom.window.MouseEvent("click", {
     bubbles: true,
     cancelable: true
@@ -430,10 +708,7 @@ test("trade action menu settings and connect controls are functional", async () 
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickFirstTradeRow(dom);
   document.querySelector("[data-trade-menu]").dispatchEvent(new dom.window.MouseEvent("click", {
     bubbles: true,
     cancelable: true
@@ -452,6 +727,7 @@ test("trade action menu settings and connect controls are functional", async () 
     cancelable: true
   }));
   const initialArticleSearchCount = calls.articleSearches.length;
+  const initialResultsCount = calls.results.length;
   document.querySelector("[data-trade-action='connect']").dispatchEvent(new dom.window.MouseEvent("click", {
     bubbles: true,
     cancelable: true
@@ -459,7 +735,7 @@ test("trade action menu settings and connect controls are functional", async () 
 
   await waitFor(() => refreshButton.disabled === false && calls.articleSearches.length > initialArticleSearchCount, "trade connect refresh");
 
-  assert.equal(calls.results.length, 2);
+  assert.equal(calls.results.length, initialResultsCount + 1);
   assert.equal(document.querySelector(".trade-view"), null);
   assert.equal(calls.statuses.at(-1).title, "Local scan complete");
 });
@@ -476,10 +752,7 @@ test("trade ticket controls update side, amount, and preview detail", async () =
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickFirstTradeRow(dom);
   document.querySelector("[data-trade-side='no']").dispatchEvent(new dom.window.MouseEvent("click", {
     bubbles: true,
     cancelable: true
@@ -516,6 +789,7 @@ test("real renderer trade controls work through the popup controller", async () 
     eventTitle: "US x Iran permanent peace deal by...?",
     confidence: 88,
     url: "https://polymarket.com/event/us-iran-peace-deal",
+    endDate: "2026-12-31T12:00:00.000Z",
     primaryPrice: 0.32,
     secondaryPrice: 0.68,
     primaryPercent: 32,
@@ -527,10 +801,7 @@ test("real renderer trade controls work through the popup controller", async () 
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "real renderer initial popup run");
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickFirstTradeRow(dom);
 
   assert.ok(document.querySelector(".trade-view"));
   assert.equal(document.querySelector(".trade-view").dataset.marketUrl, "https://polymarket.com/event/us-iran-peace-deal");
@@ -589,6 +860,7 @@ test("real renderer hydrates Polymarket trade view with live CLOB data", async (
     eventTitle: "US x Iran permanent peace deal by...?",
     confidence: 88,
     url: "https://polymarket.com/event/us-iran-peace-deal",
+    endDate: "2026-12-31T12:00:00.000Z",
     primaryPrice: 0.32,
     secondaryPrice: 0.68,
     primaryPercent: 32,
@@ -632,10 +904,7 @@ test("real renderer hydrates Polymarket trade view with live CLOB data", async (
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "CLOB hydrate initial popup run");
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickFirstTradeRow(dom);
 
   await waitFor(() => (
     calls.tradeDataRequests.length === 1 &&
@@ -667,6 +936,7 @@ test("real renderer preserves trade interactions when live CLOB hydration finish
     title: "Will the US and Iran reach a permanent peace deal in 2026?",
     confidence: 88,
     url: "https://polymarket.com/event/us-iran-peace-deal",
+    endDate: "2026-12-31T12:00:00.000Z",
     primaryPrice: 0.32,
     secondaryPrice: 0.68,
     primaryPercent: 32,
@@ -714,10 +984,7 @@ test("real renderer preserves trade interactions when live CLOB hydration finish
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "delayed CLOB initial popup run");
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickFirstTradeRow(dom);
 
   await waitFor(() => calls.tradeDataRequests.length === 1 && document.querySelector(".trade-view"), "delayed CLOB trade view");
 
@@ -787,10 +1054,7 @@ test("real renderer Hyperliquid trade controls stay Long Short through the popup
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "real Hyperliquid initial popup run");
 
-  document.querySelector(".market-card").dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickFirstTradeRow(dom);
 
   const ticketText = document.querySelector(".trade-ticket").textContent;
   assert.equal(document.querySelector(".trade-view").dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
@@ -809,7 +1073,7 @@ test("real renderer Hyperliquid trade controls stay Long Short through the popup
   assert.match(document.querySelector("[data-trade-estimate]").textContent, /Est\. contracts:/);
 });
 
-test("real renderer compact Hyperliquid cards open the internal trade view", async () => {
+test("real renderer compact Hyperliquid cards expand before their rows open the internal trade view", async () => {
   const polymarketCandidate = makeBinaryCandidate({
     id: "pm-iran-peace",
     eventId: "pm-iran-peace",
@@ -852,16 +1116,20 @@ test("real renderer compact Hyperliquid cards open the internal trade view", asy
   assert.ok(hyperliquidCard);
   assert.equal(hyperliquidCard.classList.contains("market-card-expanded"), false);
 
-  hyperliquidCard.dispatchEvent(new dom.window.MouseEvent("click", {
-    bubbles: true,
-    cancelable: true
-  }));
+  clickNode(dom, hyperliquidCard);
+  assert.equal(calls.tradeViews.length, 0);
+  assert.ok(document.querySelector('a.market-card[data-market-source="Hyperliquid"].market-card-expanded'));
+
+  const resultsRegion = document.querySelector("#results-region");
+  resultsRegion.scrollTop = 220;
+  clickNode(dom, document.querySelector('a.market-card[data-market-source="Hyperliquid"] [data-market-row-key]'));
 
   const tradeView = document.querySelector(".trade-view");
   assert.ok(tradeView);
   assert.equal(tradeView.dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
   assert.equal(tradeView.querySelector(".source-badge").getAttribute("aria-label"), "Hyperliquid");
   assert.equal(tradeView.querySelector("[data-trade-buy]").textContent, "Buy Long");
+  assert.equal(resultsRegion.scrollTop, 0);
   assert.equal(calls.openedTabs.length, 0);
 });
 
@@ -1001,6 +1269,40 @@ test("popup progressively reveals all related groups instead of capping at four"
   assert.equal(dom.window.document.querySelector("[data-related-load-more]"), null);
 });
 
+test("related pagination preserves scroll-collapsed header state", async () => {
+  const relatedCandidates = Array.from({ length: 12 }, (_item, index) => makeBinaryCandidate({
+    id: `related-${index}`,
+    title: `Related market ${index + 1}`,
+    confidence: 90 - index,
+    matchTier: index < 8 ? "strong" : "maybe",
+    url: `https://polymarket.com/event/related-${index}`
+  }));
+  const { dom, calls, refreshButton } = setupPopup({
+    url: "chrome-extension://extension-id/src/popup/popup.html?expanded=1",
+    searchResult: relatedCandidates
+  });
+  const document = dom.window.document;
+  const shell = document.querySelector(".popup-shell");
+  const results = document.getElementById("results-region");
+
+  await waitFor(() => (
+    refreshButton.disabled === false &&
+    calls.results.length === 1 &&
+    calls.results[0].candidates.length === 8
+  ), "initial related batch");
+
+  results.scrollTop = 72;
+  results.dispatchEvent(new dom.window.Event("scroll"));
+  await waitFor(() => shell.classList.contains("is-results-scrolled"), "collapsed header before pagination");
+
+  document.querySelector("[data-related-load-more]").click();
+
+  await waitFor(() => calls.results.length === 2 && calls.results[1].candidates.length === 12, "expanded related batch");
+
+  assert.equal(results.scrollTop, 72);
+  assert.equal(shell.classList.contains("is-results-scrolled"), true);
+});
+
 test("popup controller renders no-readable article state without searching", async () => {
   const { calls, refreshButton } = setupPopup({
     extractResult: {
@@ -1060,7 +1362,7 @@ test("popup search form searches Polymarket markets without rerunning article ex
   assert.equal(calls.results[1].options.title, "Search results");
 });
 
-test("popup search tab clears stale related results before a query is submitted", async () => {
+test("popup watchlist tab clears stale results and renders an empty placeholder", async () => {
   const candidate = makeBinaryCandidate({
     id: "related-btc",
     title: "Will Bitcoin hit $150k?",
@@ -1068,16 +1370,16 @@ test("popup search tab clears stale related results before a query is submitted"
     url: "https://polymarket.com/event/bitcoin"
   });
   const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate] });
-  const searchTab = dom.window.document.getElementById("search-tab");
+  const watchlistTab = dom.window.document.getElementById("watchlist-tab");
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
 
-  searchTab.click();
+  watchlistTab.click();
 
-  assert.equal(calls.statuses.at(-1).title, "Search ready");
-  assert.equal(calls.empty.at(-1).title, "Search markets");
-  assert.equal(calls.empty.at(-1).detail, "Type a market, token, event, or topic.");
-  assert.equal(calls.empty.at(-1).options.title, "Search results");
+  assert.equal(calls.statuses.at(-1).title, "Watchlist");
+  assert.equal(calls.empty.at(-1).title, "No watchlist markets yet");
+  assert.equal(calls.empty.at(-1).detail, "Saved markets will appear here.");
+  assert.equal(calls.empty.at(-1).options.title, "Watchlist");
   assert.equal(calls.results.length, 1);
 });
 
@@ -1122,6 +1424,15 @@ test("visible menu actions show sighted feedback instead of hidden-only status",
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "expanded popup initial run");
 
+  menuButton.click();
+  document.getElementById("profile-button").click();
+  assert.equal(shell.classList.contains("is-menu-open"), false);
+  assert.equal(menuButton.getAttribute("aria-expanded"), "false");
+  assert.equal(surface.hidden, false);
+  assert.match(surface.textContent, /Profile/);
+  assert.match(surface.textContent, /Default profile/);
+
+  menuButton.click();
   document.getElementById("settings-button").click();
   assert.equal(shell.classList.contains("is-menu-open"), false);
   assert.equal(menuButton.getAttribute("aria-expanded"), "false");
@@ -1135,10 +1446,6 @@ test("visible menu actions show sighted feedback instead of hidden-only status",
   assert.equal(surface.hidden, false);
   assert.match(surface.textContent, /Information/);
   assert.match(surface.textContent, /No data leaves device/);
-
-  document.getElementById("trade-toggle-button").click();
-  assert.equal(document.getElementById("trade-toggle-button").getAttribute("aria-pressed"), "true");
-  assert.match(surface.textContent, /Trade mode on/);
 
   menuButton.click();
   document.getElementById("refresh-button").click();
@@ -1162,17 +1469,13 @@ test("menu overlay can be toggled, dismissed outside, and closed with Escape", a
   const shell = document.querySelector(".popup-shell");
   const menuButton = document.getElementById("menu-button");
   const actionMenu = document.getElementById("action-menu");
+  const profileButton = document.getElementById("profile-button");
   const settingsButton = document.getElementById("settings-button");
   const refreshButtonNode = document.getElementById("refresh-button");
   const infoButton = document.getElementById("privacy-info-button");
 
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "expanded popup initial run");
 
-  assert.equal(shell.classList.contains("is-menu-open"), true);
-  assert.equal(menuButton.getAttribute("aria-expanded"), "true");
-  assert.equal(actionMenu.getAttribute("aria-hidden"), "false");
-
-  menuButton.click();
   assert.equal(shell.classList.contains("is-menu-open"), false);
   assert.equal(menuButton.getAttribute("aria-expanded"), "false");
   assert.equal(actionMenu.getAttribute("aria-hidden"), "true");
@@ -1181,22 +1484,22 @@ test("menu overlay can be toggled, dismissed outside, and closed with Escape", a
   assert.equal(shell.classList.contains("is-menu-open"), true);
   assert.equal(menuButton.getAttribute("aria-expanded"), "true");
   assert.equal(actionMenu.getAttribute("aria-hidden"), "false");
-  assert.equal(document.activeElement, settingsButton);
+  assert.equal(document.activeElement, profileButton);
 
   actionMenu.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
-  assert.equal(document.activeElement, refreshButtonNode);
+  assert.equal(document.activeElement, settingsButton);
 
   actionMenu.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
   assert.equal(document.activeElement, infoButton);
 
   actionMenu.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
-  assert.equal(document.activeElement, settingsButton);
+  assert.equal(document.activeElement, profileButton);
 
   actionMenu.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
   assert.equal(document.activeElement, infoButton);
 
   actionMenu.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
-  assert.equal(document.activeElement, settingsButton);
+  assert.equal(document.activeElement, profileButton);
 
   document.getElementById("outside-button").click();
   assert.equal(shell.classList.contains("is-menu-open"), false);
@@ -1204,7 +1507,7 @@ test("menu overlay can be toggled, dismissed outside, and closed with Escape", a
   assert.equal(actionMenu.getAttribute("aria-hidden"), "true");
 
   menuButton.click();
-  assert.equal(document.activeElement, settingsButton);
+  assert.equal(document.activeElement, profileButton);
   document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   assert.equal(shell.classList.contains("is-menu-open"), false);
   assert.equal(menuButton.getAttribute("aria-expanded"), "false");
