@@ -518,7 +518,7 @@ async function main() {
       if (layout.expandedCaretCount !== 0 || layout.scenarioLabels.length !== 0 || layout.scenarioValues.length !== 0) {
         throw new Error(`${viewport.name} layout should start with every market card collapsed: ${JSON.stringify({ caretCount: layout.expandedCaretCount, labels: layout.scenarioLabels, values: layout.scenarioValues })}`);
       }
-      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 542 || layout.shellRect.height > 546)) {
+      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 562 || layout.shellRect.height > 566)) {
         throw new Error(`${viewport.name} layout shell height drifted from the reference aspect target: ${layout.shellRect && layout.shellRect.height}`);
       }
       if (viewport.name === "popup") {
@@ -537,13 +537,13 @@ async function main() {
         if (!tradeView.shellRect || !tradeView.viewRect || !tradeView.bookRect || !tradeView.buyRect || tradeView.viewRect.height <= tradeView.shellRect.height || tradeView.bookRect.top <= tradeView.buyRect.bottom) {
           throw new Error(`${viewport.name} trade view stopped behaving like a scrollable trade surface: ${JSON.stringify(tradeView)}`);
         }
-        if (!tradeView.ticketRect || tradeView.ticketRect.height < 184 || tradeView.ticketRect.height > 198 || !tradeView.bookRect || tradeView.bookRect.top < 646 || tradeView.bookRect.top > 666) {
+        if (!tradeView.ticketRect || tradeView.ticketRect.height < 184 || tradeView.ticketRect.height > 198 || !tradeView.bookRect || tradeView.bookRect.top < 686 || tradeView.bookRect.top > 704) {
           throw new Error(`${viewport.name} trade view ticket rhythm drifted from the reference: ${JSON.stringify({ ticket: tradeView.ticketRect, book: tradeView.bookRect })}`);
         }
         if (JSON.stringify(tradeView.tradeActionLabels) !== JSON.stringify(["Settings", "Connect", "Information"])) {
           throw new Error(`${viewport.name} trade action menu labels drifted from the reference: ${JSON.stringify(tradeView.tradeActionLabels)}`);
         }
-        if (tradeView.tradeTitleFontSize < 21.5 || tradeView.tradeTitleFontSize > 22.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 45 || tradeView.tradeTitleRect.height > 54) {
+        if (tradeView.tradeTitleFontSize < 20.5 || tradeView.tradeTitleFontSize > 21.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 44 || tradeView.tradeTitleRect.height > 52) {
           throw new Error(`${viewport.name} trade title font size drifted from the reference scale: ${tradeView.tradeTitleFontSize}`);
         }
         if (!tradeView.chartRect || !tradeView.chartPriceRect || tradeView.chartPriceRect.top > tradeView.chartRect.top + 48 || tradeView.chartMarkerCx === null || tradeView.chartMarkerCx < 285 || tradeView.chartMarkerCx > 325 || tradeView.chartMarkerCy === null || tradeView.chartMarkerCy > 98) {

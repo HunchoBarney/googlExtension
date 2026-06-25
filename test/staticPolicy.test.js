@@ -100,6 +100,7 @@ test("expanded popup keeps a taller anchored action height", () => {
   const css = fs.readFileSync(path.join(root, "src/popup/popup.css"), "utf8");
 
   assert.match(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*width:\s*500px;[^}]*min-width:\s*500px;/s);
-  assert.match(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*height:\s*580px;[^}]*min-height:\s*580px;[^}]*max-height:\s*580px;/s);
+  assert.match(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*height:\s*600px;[^}]*min-height:\s*600px;[^}]*max-height:\s*600px;/s);
+  assert.doesNotMatch(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*height:\s*min\([^}]*100vh/s);
   assert.doesNotMatch(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*height:\s*850px;[^}]*min-height:\s*850px;/s);
 });

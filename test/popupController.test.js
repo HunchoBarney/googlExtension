@@ -32,7 +32,7 @@ function waitFor(condition, label) {
   });
 }
 
-function setupPopup({ extractResult, searchResult, searchError, tradeDataResult, hyperliquidResult, hyperliquidError, enrichGroups, runtimeManifest, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
+function setupPopup({ extractResult, searchResult, searchError, tradeDataResult, hyperliquidResult, hyperliquidError, enrichGroups, runtimeManifest, tabQueryResults, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
   const dom = new JSDOM(`<!doctype html><body>
     <main class="popup-shell">
     <header class="rainbow-topbar">
@@ -295,7 +295,9 @@ function setupPopup({ extractResult, searchResult, searchError, tradeDataResult,
   const chromeMock = {
     tabs: {
       async query() {
-        return [{ id: 123 }];
+        return typeof tabQueryResults === "function"
+          ? tabQueryResults()
+          : (tabQueryResults || [{ id: 123, url: "https://news.example/article" }]);
       },
       create(options) {
         calls.openedTabs.push(options);
@@ -502,6 +504,32 @@ test("popup refresh reruns local model analysis", async () => {
   refreshButton.click();
   await waitFor(() => refreshButton.disabled === false && calls.results.length === 2, "refresh rerun");
 
+  assert.deepEqual(calls.analyzeOptions.map((options) => options.analysisStrategy), ["classifier", "classifier"]);
+});
+
+test("popup refresh reuses the activation article snapshot when Chrome reports the popup surface", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "btc",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    url: "https://polymarket.com/event/bitcoin"
+  });
+  const tabQueries = [
+    [{ id: 123, url: "https://news.example/article" }],
+    [{ id: 999, url: "chrome-extension://extension-id/src/popup/popup.html" }]
+  ];
+  const { calls, refreshButton } = setupPopup({
+    searchResult: [candidate],
+    tabQueryResults() {
+      return tabQueries.shift() || [{ id: 999, url: "chrome-extension://extension-id/src/popup/popup.html" }];
+    }
+  });
+
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "initial popup run");
+  refreshButton.click();
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 2, "cached article-tab refresh");
+
+  assert.deepEqual(calls.executeScript.map((call) => call.target.tabId), [123]);
   assert.deepEqual(calls.analyzeOptions.map((options) => options.analysisStrategy), ["classifier", "classifier"]);
 });
 

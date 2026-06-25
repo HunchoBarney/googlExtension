@@ -1071,7 +1071,7 @@
 
   function createTradeChart(candidate, primary) {
     const chart = document.createElement("section");
-    chart.className = "trade-chart-card";
+    chart.className = "trade-chart-card has-tradingview";
     chart.setAttribute("aria-label", "Market price chart");
 
     const frame = document.createElement("div");
@@ -1113,7 +1113,13 @@
     dateLabel.textContent = initialChart.date;
     dateLabel.style.left = `${(initialChart.markerX / 420) * 100}%`;
 
-    frame.append(svg, priceLabel, dateLabel);
+    const tradingViewHost = document.createElement("div");
+    tradingViewHost.className = "tradingview-chart-host";
+    tradingViewHost.dataset.tradingviewChart = "true";
+    tradingViewHost.dataset.tradingviewState = "fallback";
+    tradingViewHost.setAttribute("aria-hidden", "true");
+
+    frame.append(svg, priceLabel, dateLabel, tradingViewHost);
 
     const ranges = document.createElement("div");
     ranges.className = "trade-range-row";

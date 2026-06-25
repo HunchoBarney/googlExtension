@@ -31,6 +31,7 @@
   const trendingTab = document.getElementById("trending-tab");
   const watchlistTab = document.getElementById("watchlist-tab");
   const renderer = global.PMRender;
+  const tradingView = global.PMTradingView || null;
   const signals = global.PMArticleSignals;
   const polymarket = global.PMPolymarket;
   const hyperliquid = global.PMHyperliquid || null;
@@ -48,6 +49,7 @@
   let classifierModelPromise = null;
   let latestRelatedGroups = [];
   let latestRelatedArticle = null;
+  let latestRawArticle = null;
   let latestRelatedVisibleCount = RELATED_INITIAL_VISIBLE_GROUPS;
   let latestRenderedGroups = [];
   let latestRenderOptions = { title: "Related markets" };
@@ -60,6 +62,7 @@
   let headerAnimationFrame = 0;
   let topbarExpandedHeight = 0;
   let heroExpandedHeight = 0;
+  let latestSourceTabId = Number.isInteger(sourceTabId) && sourceTabId > 0 ? sourceTabId : null;
   const HERO_COLLAPSE_FALLBACK_HEIGHT = 48;
 
   function setControlsDisabled(disabled) {
@@ -220,6 +223,9 @@
 
   function setTradeViewOpen(open, options = {}) {
     const shell = shellElement();
+    if (!open && tradingView && typeof tradingView.unmountAll === "function") {
+      tradingView.unmountAll(resultsRegion);
+    }
     if (shell) {
       shell.classList.toggle("is-trade-view", open);
     }
@@ -407,12 +413,27 @@
     if (expandedMode && Number.isInteger(sourceTabId) && sourceTabId > 0) {
       return { id: sourceTabId };
     }
+    if (latestSourceTabId) {
+      return { id: latestSourceTabId };
+    }
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const tab = tabs && tabs[0];
+    if (tab && tab.id && !isInternalChromeTab(tab)) {
+      latestSourceTabId = tab.id;
+      return tab;
+    }
+    if (latestSourceTabId) {
+      return { id: latestSourceTabId };
+    }
     if (!tab || !tab.id) {
       throw new Error("No active tab is available.");
     }
     return tab;
+  }
+
+  function isInternalChromeTab(tab = {}) {
+    const url = String(tab.url || tab.pendingUrl || "");
+    return /^(chrome|chrome-extension|edge|about|devtools):/i.test(url);
   }
 
   async function extractArticle(tabId) {
@@ -923,6 +944,7 @@
     latestTradeCandidate = candidate;
     setTradeViewOpen(true);
     renderer.renderTradeView(resultsRegion, candidate);
+    mountTradingViewChart(candidate);
     resultsRegion.scrollTop = 0;
     renderStatus("complete", "Trade view", "Review market and order details.");
     const backButton = resultsRegion.querySelector("[data-trade-back]");
@@ -951,8 +973,12 @@
       };
       const interactionState = currentTradeInteractionState();
       latestTradeCandidate = enriched;
+      if (tradingView && typeof tradingView.unmountAll === "function") {
+        tradingView.unmountAll(resultsRegion);
+      }
       renderer.renderTradeView(resultsRegion, enriched);
       restoreTradeInteractionState(interactionState);
+      mountTradingViewChart(enriched);
       renderStatus("complete", "Trade view", tradeData.tradeDataSource === "clob" ? "Live depth loaded." : "Review market and order details.");
     } catch (error) {
       warnNonFatal("Polymarket trade data query failed; keeping preview trade data.", error);
@@ -969,6 +995,18 @@
       amount: amountInput ? amountInput.value : "",
       actionsOpen: Boolean(resultsRegion.querySelector("[data-trade-actions]:not([hidden])"))
     };
+  }
+
+  function mountTradingViewChart(candidate) {
+    if (!tradingView || typeof tradingView.mountTradeChart !== "function") {
+      return;
+    }
+    const rangeButton = resultsRegion.querySelector(".trade-range-button.is-active");
+    tradingView.mountTradeChart(resultsRegion, candidate, {
+      range: rangeButton && rangeButton.dataset ? rangeButton.dataset.tradeRange : "1M"
+    }).catch((error) => {
+      warnNonFatal("TradingView chart failed to mount; keeping fallback chart.", error);
+    });
   }
 
   function restoreTradeInteractionState(state = {}) {
@@ -1183,6 +1221,9 @@
     if (dateLabel && button.dataset.chartDate) {
       dateLabel.textContent = button.dataset.chartDate;
     }
+    if (tradingView && typeof tradingView.setRange === "function") {
+      tradingView.setRange(resultsRegion, button.dataset.tradeRange || "1M");
+    }
   }
 
   function setTradeActionsOpen(open) {
@@ -1303,9 +1344,18 @@
     renderLoading();
 
     try {
-      const tab = await getActiveTab();
-      const article = await extractArticle(tab.id);
-      renderStatus("extracting", "Extracting article", "Identifying entities, keywords, and topic.");
+      const usedCachedArticle = Boolean(latestRawArticle);
+      const article = latestRawArticle || await (async () => {
+        const tab = await getActiveTab();
+        const extracted = await extractArticle(tab.id);
+        latestRawArticle = extracted;
+        return extracted;
+      })();
+      renderStatus(
+        "extracting",
+        usedCachedArticle ? "Refreshing article" : "Extracting article",
+        "Identifying entities, keywords, and topic."
+      );
 
       const classifierModel = await loadClassifierModel();
       const enrichedArticle = signals.analyzeArticle(article, {

@@ -313,6 +313,14 @@ async function readPopupState(root, sessionId) {
         tradeActiveRange: document.querySelector(".trade-range-button.is-active")?.textContent.trim() || "",
         tradeChartDate: document.querySelector(".trade-chart-date")?.textContent.trim() || "",
         tradeChartPath: document.querySelector(".trade-chart-line")?.getAttribute("d") || "",
+        tradingViewState: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewState || "",
+        tradingViewSandbox: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewSandbox || "",
+        tradingViewStage: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewStage || "",
+        tradingViewDiagnostic: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewDiagnostic || "",
+        tradingViewIframeCount: document.querySelectorAll("[data-tradingview-chart] iframe").length,
+        tradingViewReady: Boolean(document.querySelector(".trade-chart-card.tv-ready")),
+        tradingViewError: Boolean(document.querySelector(".trade-chart-card.tv-error")),
+        tradingViewIframeSrc: document.querySelector("[data-tradingview-chart] iframe")?.getAttribute("src") || "",
         tradeActiveSide: document.querySelector(".trade-side-button.is-active")?.dataset.tradeSide || "",
         tradeActionOpen: Boolean(document.querySelector("[data-trade-actions]:not([hidden])")),
         tradeActionCount: document.querySelectorAll("[data-trade-action]").length,
@@ -407,6 +415,14 @@ async function waitForPopupCondition(root, sessionId, predicate, label, timeoutM
     phase: latest && latest.phase,
     activeTab: latest && latest.visual && latest.visual.activeTabText,
     status: latest && latest.visual && latest.visual.statusText,
+    tradingViewState: latest && latest.visual && latest.visual.tradingViewState,
+    tradingViewSandbox: latest && latest.visual && latest.visual.tradingViewSandbox,
+    tradingViewStage: latest && latest.visual && latest.visual.tradingViewStage,
+    tradingViewDiagnostic: latest && latest.visual && latest.visual.tradingViewDiagnostic,
+    tradingViewIframeCount: latest && latest.visual && latest.visual.tradingViewIframeCount,
+    tradingViewReady: latest && latest.visual && latest.visual.tradingViewReady,
+    tradingViewError: latest && latest.visual && latest.visual.tradingViewError,
+    tradingViewIframeSrc: latest && latest.visual && latest.visual.tradingViewIframeSrc,
     emptyText: latest && latest.emptyText,
     errorText: latest && latest.errorText
   })}`);
@@ -986,7 +1002,8 @@ async function runActionPopupSmoke({
   skipClicks = false,
   captureArtifacts = true,
   verifyExpanded = false,
-  verifyInteractions = false
+  verifyInteractions = false,
+  verifyTradingView = false
 }) {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "predmarket-extension-smoke-"));
   const commandKey = actionCommandKey();
@@ -1003,6 +1020,7 @@ async function runActionPopupSmoke({
     captureArtifacts,
     verifyExpanded,
     verifyInteractions,
+    verifyTradingView,
     extensionId: "",
     extensionCommand: null,
     preActivationAccess: null,
@@ -1230,11 +1248,23 @@ async function runActionPopupSmoke({
         "date row click trade view"
       );
       await waitForPopupImages(root, popupSessionId);
+      const initialChartPath = tradeState.visual.tradeChartPath;
+      const hyperliquidTrade = tradeState.visual.tradeMarketSource === "Hyperliquid";
+      const tradingViewState = verifyTradingView
+        ? await waitForPopupCondition(
+          root,
+          popupSessionId,
+          (state) => state.visual.tradingViewState === "ready" &&
+            state.visual.tradingViewReady === true &&
+            state.visual.tradingViewIframeCount >= 1 &&
+            state.visual.tradingViewError === false,
+          "TradingView chart iframe ready",
+          90000
+        )
+        : null;
       const tradeScreenshot = captureArtifacts
         ? await capturePopupScreenshot(root, popupSessionId, "browser-smoke-trade")
         : "";
-      const initialChartPath = tradeState.visual.tradeChartPath;
-      const hyperliquidTrade = tradeState.visual.tradeMarketSource === "Hyperliquid";
       await clickPopupSelector(root, popupSessionId, "[data-trade-range='1Y']");
       const rangeState = await waitForPopupCondition(
         root,
@@ -1314,7 +1344,13 @@ async function runActionPopupSmoke({
           actionsOpen: actionsState.visual.tradeActionOpen,
           informationSurface: infoState.visual.surfaceText,
           buySurface: buyState.visual.surfaceText,
-          backCardCount: backState.cardLinks.length
+          backCardCount: backState.cardLinks.length,
+          tradingView: tradingViewState ? {
+            state: tradingViewState.visual.tradingViewState,
+            ready: tradingViewState.visual.tradingViewReady,
+            iframeCount: tradingViewState.visual.tradingViewIframeCount,
+            iframeSrc: tradingViewState.visual.tradingViewIframeSrc
+          } : null
         },
         screenshot: tradeScreenshot
       };
@@ -1425,6 +1461,10 @@ async function main() {
   const captureArtifacts = !demoMode && !hasFlag("no-artifacts");
   const verifyExpanded = hasFlag("verify-expanded");
   const verifyInteractions = hasFlag("verify-interactions");
+  const verifyTradingView = hasFlag("verify-tradingview");
+  if (verifyTradingView && skipClicks) {
+    throw new Error("--verify-tradingview requires opening a trade view; remove --skip-clicks or --demo.");
+  }
   const visualReference = argValue("visual-reference", "");
   const result = await runActionPopupSmoke({
     extensionPath,
@@ -1437,7 +1477,8 @@ async function main() {
     skipClicks,
     captureArtifacts,
     verifyExpanded,
-    verifyInteractions
+    verifyInteractions,
+    verifyTradingView
   });
   const visualReport = runVisualReferenceCheck(
     visualReference,
@@ -1485,6 +1526,10 @@ async function main() {
     console.log(`Click skipped: ${result.clickedLinkCheck.reason}`);
   } else if (result.clickedLinkCheck.internalTradeView) {
     console.log(`Clicked ${result.clickedLinkCheck.href} into trade view "${result.clickedLinkCheck.title}"`);
+    if (result.clickedLinkCheck.controls && result.clickedLinkCheck.controls.tradingView) {
+      const tv = result.clickedLinkCheck.controls.tradingView;
+      console.log(`TradingView chart: ${tv.state}, ${tv.iframeCount} iframe(s), ${tv.iframeSrc}`);
+    }
   } else {
     console.log(`Clicked ${result.clickedLinkCheck.finalUrl}`);
   }
