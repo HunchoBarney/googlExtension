@@ -38,6 +38,10 @@ function delay(ms) {
   });
 }
 
+function futureIsoDate(daysAhead = 30) {
+  return new Date(Date.now() + (daysAhead * 24 * 60 * 60 * 1000)).toISOString();
+}
+
 function setupPopup({ extractResult, searchResult, searchError, tradeDataResult, hyperliquidResult, hyperliquidError, enrichGroups, runtimeManifest, tabQueryResults, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
   const dom = new JSDOM(`<!doctype html><body>
     <main class="popup-shell">
@@ -710,7 +714,7 @@ test("clicking a rendered market toggles it while clicking a date row opens trad
     title: "Will Bitcoin hit $150k?",
     confidence: 70,
     url: "https://polymarket.com/event/bitcoin",
-    endDate: "2026-06-30T00:00:00.000Z"
+    endDate: futureIsoDate()
   });
   const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate], useRealRenderer: true });
   const document = dom.window.document;
@@ -748,7 +752,7 @@ test("market expansion animates between measured card heights", async () => {
     title: "Will Bitcoin hit $150k?",
     confidence: 70,
     url: "https://polymarket.com/event/bitcoin",
-    endDate: "2026-06-30T00:00:00.000Z"
+    endDate: futureIsoDate()
   });
   const { dom, refreshButton } = setupPopup({ searchResult: [candidate], useRealRenderer: true });
   const document = dom.window.document;
@@ -805,7 +809,7 @@ test("clicking show more reveals all grouped options without opening trade view"
     title: `Will ${country} win the 2026 FIFA World Cup?`,
     groupItemTitle: country,
     raw: { groupItemTitle: country },
-    endDate: "2026-07-20T00:00:00.000Z",
+    endDate: futureIsoDate(60),
     primaryPercent: index === 0 ? 10 : index,
     confidence: 80 - index,
     url: `https://polymarket.com/event/world-cup-winner/${country.toLowerCase()}`
