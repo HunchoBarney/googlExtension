@@ -93,6 +93,23 @@ test("searches Hyperliquid markets by article entities and aliases", async () =>
   assert.equal(results[0].confidence >= 50, true);
 });
 
+test("skips Hyperliquid article search without a crypto signal", async () => {
+  const fetch = fetchImpl();
+  const article = signals.analyzeArticle({
+    title: "Prime minister says immigration plan is not ready",
+    cleanText: "The minister said the policy was not ready after opposition lawmakers criticized the plan."
+  });
+
+  const results = await hyperliquid.searchAndRank(article, {
+    fetchImpl: fetch,
+    maxResults: 4,
+    minConfidence: 35
+  });
+
+  assert.deepEqual(results, []);
+  assert.equal(fetch.calls.length, 0);
+});
+
 test("searches Hyperliquid markets by manual query", async () => {
   const results = await hyperliquid.searchMarkets("ethereum price", {
     fetchImpl: fetchImpl(),

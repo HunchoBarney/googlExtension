@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { performance } = require("node:perf_hooks");
 const signals = require("../src/lib/articleSignals");
 globalThis.PMArticleSignals = signals;
 const polymarket = require("../src/lib/polymarket");
@@ -370,6 +371,39 @@ test("ranks relevant active markets and hides irrelevant or resolved markets", (
   assert.equal(ranked.length, 1);
   assert.equal(ranked[0].id, "btc-open");
   assert.ok(ranked[0].confidence >= 48);
+});
+
+test("rankCandidates stays within popup budget for large public-search batches", () => {
+  const analyzed = article();
+  const candidates = Array.from({ length: 700 }, (_item, index) => {
+    const relevant = index % 7 === 0;
+    return polymarket.normalizeMarket({
+      id: `batch-${index}`,
+      question: relevant
+        ? `Will Bitcoin hit $${120 + index}k in 2026?`
+        : `Will candidate ${index} win a regional election?`,
+      description: relevant
+        ? "BTC ETF inflows, crypto liquidity, and price targets are the resolution context."
+        : "Politics, campaigns, voting, and polling are the resolution context.",
+      outcomes: "[\"Yes\", \"No\"]",
+      outcomePrices: "[\"0.44\", \"0.56\"]",
+      volume: String(100000 + index * 1000),
+      liquidity: "50000",
+      active: true,
+      closed: false
+    });
+  });
+
+  const started = performance.now();
+  const ranked = polymarket.rankCandidates(candidates, analyzed, {
+    minConfidence: 35,
+    includeMaybe: true,
+    maxResults: 20
+  });
+  const elapsedMs = performance.now() - started;
+
+  assert.ok(ranked.length > 0);
+  assert.ok(elapsedMs < 350, `expected large-batch ranking under 350ms, saw ${elapsedMs.toFixed(1)}ms`);
 });
 
 test("filters markets that are pending review or otherwise not live", () => {

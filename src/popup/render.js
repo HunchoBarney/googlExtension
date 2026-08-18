@@ -1567,7 +1567,7 @@
     }
   }
 
-  function renderLoading(root, title = "Finding related markets") {
+  function renderLoading(root, title = "Finding related markets", detail = "") {
     clearMarketSurface(root);
     root.classList.add("is-loading");
 
@@ -1584,6 +1584,11 @@
     strong.textContent = title;
 
     state.append(loader, strong);
+    if (detail) {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = detail;
+      state.append(paragraph);
+    }
     root.append(state);
   }
 

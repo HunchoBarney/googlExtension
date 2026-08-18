@@ -212,8 +212,11 @@ svg circle {
   overflow: visible;
 }
 
-.is-results-scrolled .rainbow-topbar,
 .is-results-scrolled .hero-region {
+  pointer-events: none;
+}
+
+.is-results-scrolled .rainbow-topbar > :not(.menu-wrap) {
   pointer-events: none;
 }
 

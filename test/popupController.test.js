@@ -32,6 +32,12 @@ function waitFor(condition, label) {
   });
 }
 
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function setupPopup({ extractResult, searchResult, searchError, tradeDataResult, hyperliquidResult, hyperliquidError, enrichGroups, runtimeManifest, tabQueryResults, url = "chrome-extension://extension-id/src/popup/popup.html", useRealRenderer = false } = {}) {
   const dom = new JSDOM(`<!doctype html><body>
     <main class="popup-shell">
@@ -419,6 +425,170 @@ test("popup controller shows finding-related-markets loader while related search
 
   resolveSearch([]);
   await waitFor(() => refreshButton.disabled === false && calls.empty.length === 1, "related search completion");
+});
+
+test("popup exposes timing entries for the related-market pipeline", async () => {
+  const candidate = makeBinaryCandidate({
+    id: "btc",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    url: "https://polymarket.com/event/bitcoin"
+  });
+  const { dom, calls, refreshButton } = setupPopup({ searchResult: [candidate] });
+
+  await waitFor(() => (
+    refreshButton.disabled === false &&
+    calls.results.length >= 1 &&
+    (dom.window.__PM_POPUP_TIMINGS || []).some((timing) => timing.label === "trader-enrichment")
+  ), "timed popup run");
+
+  const timings = dom.window.__PM_POPUP_TIMINGS || [];
+  const labels = timings.map((timing) => timing.label);
+  for (const label of [
+    "extraction",
+    "local-analysis",
+    "polymarket-primary-fetch",
+    "polymarket-primary-grouping",
+    "trader-enrichment",
+    "render-results"
+  ]) {
+    assert.ok(labels.includes(label), `missing timing label ${label}`);
+  }
+  for (const timing of timings) {
+    assert.equal(typeof timing.durationMs, "number");
+    assert.ok(timing.durationMs >= 0);
+    assert.ok(timing.endedAt >= timing.startedAt);
+  }
+});
+
+test("popup does not start heavy maybe-related expansion after primary cards render", async () => {
+  const strongCandidate = makeBinaryCandidate({
+    id: "btc-strong",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    matchTier: "strong",
+    url: "https://polymarket.com/event/bitcoin-150k"
+  });
+  const { calls, refreshButton } = setupPopup({
+    searchResult(options) {
+      return options.minConfidence === 55 ? [strongCandidate] : [];
+    }
+  });
+
+  await waitFor(() => calls.results.length === 1, "primary related render");
+
+  assert.equal(refreshButton.disabled, false);
+  assert.deepEqual(calls.results[0].candidates.map((candidate) => candidate.id), ["btc-strong"]);
+  assert.equal(calls.statuses.at(-1).detail, "1 related event found");
+  await delay(750);
+  assert.equal(calls.articleSearches.length, 1);
+});
+
+test("popup keeps first related cards clickable before optional expansion starts", async () => {
+  const strongCandidate = makeBinaryCandidate({
+    id: "btc-strong",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    matchTier: "strong",
+    url: "https://polymarket.com/event/bitcoin-150k"
+  });
+  const maybeCandidate = makeBinaryCandidate({
+    id: "btc-maybe",
+    title: "Bitcoin above $120k?",
+    confidence: 46,
+    matchTier: "maybe",
+    url: "https://polymarket.com/event/bitcoin-120k"
+  });
+  const { dom, calls, refreshButton } = setupPopup({
+    searchResult(options) {
+      return options.minConfidence === 55
+        ? [strongCandidate]
+        : [strongCandidate, maybeCandidate];
+    },
+    useRealRenderer: true
+  });
+  const document = dom.window.document;
+
+  await waitFor(() => (
+    refreshButton.disabled === false &&
+    document.querySelector(".market-card") &&
+    /Local scan complete/i.test(document.querySelector("#status-region").textContent)
+  ), "first complete related render");
+
+  assert.equal(calls.articleSearches.length, 1);
+  assert.equal(document.querySelector("#results-region").classList.contains("is-loading"), false);
+
+  clickNode(dom, document.querySelector(".market-card"));
+  assert.ok(document.querySelector(".market-card-expanded"));
+
+  await delay(750);
+  assert.equal(calls.articleSearches.length, 1);
+});
+
+test("popup does not start Hyperliquid article expansion after primary Polymarket cards render", async () => {
+  const polymarketCandidate = makeBinaryCandidate({
+    id: "pm-btc",
+    eventId: "pm-btc",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    url: "https://polymarket.com/event/bitcoin-150k"
+  });
+  const hyperliquidCandidate = makeBinaryCandidate({
+    id: "hyperliquid:BTC",
+    eventId: "hyperliquid:BTC",
+    title: "BTC perpetual market",
+    confidence: 82,
+    url: "https://app.hyperliquid.xyz/trade/BTC",
+    marketSource: "Hyperliquid",
+    sourceLabel: "Hyperliquid",
+    source: "hyperliquid",
+    displayValue: "$105,001",
+    primaryPrice: null,
+    secondaryPrice: null,
+    primaryPercent: null,
+    outcomeOptions: []
+  });
+  const { calls, refreshButton } = setupPopup({
+    searchResult: [polymarketCandidate],
+    hyperliquidResult: [hyperliquidCandidate]
+  });
+
+  await waitFor(() => calls.results.length === 1, "Polymarket render");
+
+  assert.equal(refreshButton.disabled, false);
+  assert.deepEqual(calls.results[0].candidates.map((candidate) => candidate.id), ["pm-btc"]);
+  await delay(750);
+  assert.equal(calls.hyperliquidArticleSearches.length, 0);
+});
+
+test("popup renders related cards before trader enrichment finishes", async () => {
+  let resolveEnrichment;
+  const pendingEnrichment = new Promise((resolve) => {
+    resolveEnrichment = resolve;
+  });
+  const candidate = makeBinaryCandidate({
+    id: "pm-btc",
+    title: "Will Bitcoin hit $150k?",
+    confidence: 70,
+    conditionId: "0xabc",
+    url: "https://polymarket.com/event/bitcoin-150k"
+  });
+  const { calls, refreshButton } = setupPopup({
+    searchResult: [candidate],
+    enrichGroups() {
+      return pendingEnrichment;
+    }
+  });
+
+  await waitFor(() => calls.results.length === 1, "related render before enrichment");
+
+  assert.equal(refreshButton.disabled, false);
+  assert.deepEqual(calls.results[0].candidates.map((group) => group.traderCount), [undefined]);
+
+  resolveEnrichment([{ ...candidate, traderCount: 123 }]);
+  await waitFor(() => calls.results.length === 2, "enriched related render");
+
+  assert.deepEqual(calls.results[1].candidates.map((group) => group.traderCount), [123]);
 });
 
 test("legacy detached launcher reloads stale manifest before searching", async () => {
@@ -1101,18 +1271,7 @@ test("real renderer Hyperliquid trade controls stay Long Short through the popup
   assert.match(document.querySelector("[data-trade-estimate]").textContent, /Est\. contracts:/);
 });
 
-test("real renderer compact Hyperliquid cards expand before their rows open the internal trade view", async () => {
-  const polymarketCandidate = makeBinaryCandidate({
-    id: "pm-iran-peace",
-    eventId: "pm-iran-peace",
-    title: "Will the US and Iran reach a permanent peace deal in 2026?",
-    eventTitle: "US x Iran permanent peace deal by...?",
-    confidence: 88,
-    url: "https://polymarket.com/event/us-iran-peace-deal",
-    primaryPrice: 0.32,
-    secondaryPrice: 0.68,
-    primaryPercent: 32
-  });
+test("real renderer compact Hyperliquid fallback cards expand before their rows open the internal trade view", async () => {
   const hyperliquidCandidate = {
     id: "hyperliquid:BRENT",
     eventId: "hyperliquid:BRENT",
@@ -1132,13 +1291,13 @@ test("real renderer compact Hyperliquid cards expand before their rows open the 
     }
   };
   const { dom, calls, refreshButton } = setupPopup({
-    searchResult: [polymarketCandidate],
+    searchResult: [],
     hyperliquidResult: [hyperliquidCandidate],
     useRealRenderer: true
   });
   const document = dom.window.document;
 
-  await waitFor(() => refreshButton.disabled === false && document.querySelectorAll(".market-card").length === 2, "mixed venue cards");
+  await waitFor(() => refreshButton.disabled === false && document.querySelectorAll(".market-card").length === 1, "Hyperliquid fallback card");
 
   const hyperliquidCard = document.querySelector('a.market-card[data-market-source="Hyperliquid"]');
   assert.ok(hyperliquidCard);
@@ -1161,14 +1320,7 @@ test("real renderer compact Hyperliquid cards expand before their rows open the 
   assert.equal(calls.openedTabs.length, 0);
 });
 
-test("popup fills sparse related results with maybe-related groups", async () => {
-  const strongCandidate = makeBinaryCandidate({
-    id: "btc-strong",
-    title: "Will Bitcoin hit $150k?",
-    confidence: 70,
-    matchTier: "strong",
-    url: "https://polymarket.com/event/bitcoin-150k"
-  });
+test("popup uses maybe-related groups when primary related search finds no cards", async () => {
   const maybeCandidate = makeBinaryCandidate({
     id: "btc-maybe",
     title: "Bitcoin above $120k?",
@@ -1179,30 +1331,22 @@ test("popup fills sparse related results with maybe-related groups", async () =>
   const { calls, refreshButton } = setupPopup({
     searchResult(options) {
       return options.minConfidence === 55
-        ? [strongCandidate]
-        : [strongCandidate, maybeCandidate];
+        ? []
+        : [maybeCandidate];
     }
   });
 
-  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "filled related popup run");
+  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1 && calls.articleSearches.length === 2, "maybe related fallback popup run");
 
   assert.deepEqual(calls.articleSearches.map((call) => call.options.minConfidence), [55, 35]);
   assert.deepEqual(calls.articleSearches.map((call) => call.options.includeSimilar), [true, true]);
   assert.equal(calls.articleSearches[1].options.includeMaybe, true);
-  assert.deepEqual(calls.results[0].candidates, [strongCandidate, maybeCandidate]);
-  assert.equal(calls.results[0].candidates[1].matchTier, "maybe");
-  assert.equal(calls.statuses.at(-1).detail, "2 related events found");
+  assert.deepEqual(calls.results[0].candidates, [maybeCandidate]);
+  assert.equal(calls.results[0].candidates[0].matchTier, "maybe");
+  assert.equal(calls.statuses.at(-1).detail, "1 related event found");
 });
 
-test("popup merges Hyperliquid related markets without Polymarket trader enrichment", async () => {
-  const polymarketCandidate = makeBinaryCandidate({
-    id: "pm-btc",
-    eventId: "pm-btc",
-    title: "Will Bitcoin hit $150k?",
-    confidence: 70,
-    conditionId: "0xabc",
-    url: "https://polymarket.com/event/bitcoin-150k"
-  });
+test("popup uses Hyperliquid related fallback without Polymarket trader enrichment", async () => {
   const hyperliquidCandidate = makeBinaryCandidate({
     id: "hyperliquid:BTC",
     eventId: "hyperliquid:BTC",
@@ -1219,23 +1363,26 @@ test("popup merges Hyperliquid related markets without Polymarket trader enrichm
     outcomeOptions: []
   });
   const { calls, refreshButton } = setupPopup({
-    searchResult: [polymarketCandidate],
+    searchResult: [],
     hyperliquidResult: [hyperliquidCandidate],
     enrichGroups(groups) {
       return groups.map((group) => ({ ...group, traderCount: 123 }));
     }
   });
 
-  await waitFor(() => refreshButton.disabled === false && calls.results.length === 1, "merged venue related run");
+  await waitFor(() => (
+    refreshButton.disabled === false &&
+    calls.results.length >= 1 &&
+    calls.hyperliquidArticleSearches.length === 1
+  ), "Hyperliquid fallback related run");
 
   assert.equal(calls.hyperliquidArticleSearches.length, 1);
   assert.equal(calls.hyperliquidArticleSearches[0].options.minConfidence, 35);
   assert.equal(calls.hyperliquidGroupCandidates[0].options.maxGroups, 160);
-  assert.deepEqual(calls.traderEnrichments[0].groups.map((group) => group.id), ["pm-btc"]);
-  assert.deepEqual(calls.results[0].candidates.map((group) => group.id), ["pm-btc", "hyperliquid:BTC"]);
-  assert.equal(calls.results[0].candidates[0].traderCount, 123);
-  assert.equal(calls.results[0].candidates[1].traderCount, undefined);
-  assert.equal(calls.results[0].candidates[1].marketSource, "Hyperliquid");
+  assert.equal(calls.traderEnrichments.length, 0);
+  assert.deepEqual(calls.results[0].candidates.map((group) => group.id), ["hyperliquid:BTC"]);
+  assert.equal(calls.results[0].candidates[0].traderCount, undefined);
+  assert.equal(calls.results[0].candidates[0].marketSource, "Hyperliquid");
 });
 
 test("popup does not render expired or closed markets even if a source returns them", async () => {

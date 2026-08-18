@@ -128,6 +128,28 @@
     ].map(canonicalKey).filter(Boolean).join(" ");
   }
 
+  function articleHasCryptoSignal(article = {}) {
+    const topic = article.topic && article.topic.label;
+    const classifierTopic = article.classifier && article.classifier.topic;
+    if (topic === "crypto" || classifierTopic === "crypto") {
+      return true;
+    }
+    const entities = [
+      ...((article.entities && article.entities.crypto) || []),
+      ...((article.entities && article.entities.top) || []),
+      ...((article.centralEntities) || [])
+    ];
+    if (entities.some((entity) => entity && entity.type === "crypto")) {
+      return true;
+    }
+    const text = canonicalKey([
+      article.title,
+      ...((article.queries || []).slice(0, 8)),
+      ...entities.map((entity) => entity && entity.text)
+    ].filter(Boolean).join(" "));
+    return /\b(bitcoin|btc|ethereum|ether|eth|solana|sol|dogecoin|doge|xrp|crypto|token|blockchain|defi|stablecoin|hyperliquid|perp|perpetual)\b/.test(text);
+  }
+
   function movementFromContext(context = {}) {
     const mark = toNumber(context.markPx || context.midPx || context.oraclePx);
     const previous = toNumber(context.prevDayPx);
@@ -252,6 +274,9 @@
   }
 
   async function searchAndRank(article, options = {}) {
+    if (!articleHasCryptoSignal(article)) {
+      return [];
+    }
     const text = sourceTextForArticle(article);
     if (!text) {
       return [];

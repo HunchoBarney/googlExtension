@@ -9,6 +9,9 @@
   const MAX_RELATED_RESULT_GROUPS = 160;
   const RELATED_INITIAL_VISIBLE_GROUPS = 8;
   const RELATED_BATCH_SIZE = 8;
+  const OPTIONAL_POLYMARKET_TIMEOUT_MS = 2600;
+  const OPTIONAL_HYPERLIQUID_TIMEOUT_MS = 1800;
+  const OPTIONAL_TRADER_TIMEOUT_MS = 1400;
   const LOCAL_MODEL_STRATEGY = "classifier";
   const CLASSIFIER_MODEL_FILE = "src/lib/articleAngleClassifierData.json";
   const READABILITY_FILE = "src/vendor/Readability.js";
@@ -63,7 +66,136 @@
   let topbarExpandedHeight = 0;
   let heroExpandedHeight = 0;
   let latestSourceTabId = Number.isInteger(sourceTabId) && sourceTabId > 0 ? sourceTabId : null;
+  let activeRelatedRunId = 0;
+  const sessionPromiseCache = new Map();
   const HERO_COLLAPSE_FALLBACK_HEIGHT = 48;
+
+  function nowMs() {
+    return global.performance && typeof global.performance.now === "function"
+      ? global.performance.now()
+      : Date.now();
+  }
+
+  function resetTimings() {
+    global.__PM_POPUP_TIMINGS = [];
+    global.__PM_POPUP_TIMING_SUMMARY = {};
+  }
+
+  function recordTiming(label, startedAt, meta = {}, status = "ok", error = null) {
+    const endedAt = nowMs();
+    const entry = {
+      label,
+      status,
+      startedAt,
+      endedAt,
+      durationMs: Math.max(0, Math.round((endedAt - startedAt) * 10) / 10),
+      meta
+    };
+    if (error) {
+      entry.error = error && error.message ? error.message : String(error);
+    }
+    global.__PM_POPUP_TIMINGS = global.__PM_POPUP_TIMINGS || [];
+    global.__PM_POPUP_TIMINGS.push(entry);
+    global.__PM_POPUP_TIMING_SUMMARY = {
+      ...(global.__PM_POPUP_TIMING_SUMMARY || {}),
+      [label]: entry.durationMs
+    };
+    return entry;
+  }
+
+  async function timed(label, work, meta = {}) {
+    const startedAt = nowMs();
+    try {
+      const value = await work();
+      recordTiming(label, startedAt, meta);
+      return value;
+    } catch (error) {
+      recordTiming(label, startedAt, meta, "error", error);
+      throw error;
+    }
+  }
+
+  function timedSync(label, work, meta = {}) {
+    const startedAt = nowMs();
+    try {
+      const value = work();
+      recordTiming(label, startedAt, meta);
+      return value;
+    } catch (error) {
+      recordTiming(label, startedAt, meta, "error", error);
+      throw error;
+    }
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => {
+      global.setTimeout(resolve, ms);
+    });
+  }
+
+  async function settleWithin(label, promise, timeoutMs) {
+    let timeoutId = 0;
+    const startedAt = nowMs();
+    const timeout = new Promise((resolve) => {
+      timeoutId = global.setTimeout(() => {
+        resolve({ status: "timeout" });
+      }, timeoutMs);
+    });
+    const settled = await Promise.race([
+      promise.then(
+        (value) => ({ status: "fulfilled", value }),
+        (error) => ({ status: "rejected", error })
+      ),
+      timeout
+    ]);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    if (settled.status === "timeout") {
+      recordTiming(`${label}-timeout`, startedAt, { timeoutMs }, "timeout");
+    }
+    return settled;
+  }
+
+  function cachedPromise(key, factory) {
+    if (sessionPromiseCache.has(key)) {
+      return sessionPromiseCache.get(key);
+    }
+    const promise = Promise.resolve()
+      .then(factory)
+      .catch((error) => {
+        sessionPromiseCache.delete(key);
+        throw error;
+      });
+    sessionPromiseCache.set(key, promise);
+    while (sessionPromiseCache.size > 32) {
+      sessionPromiseCache.delete(sessionPromiseCache.keys().next().value);
+    }
+    return promise;
+  }
+
+  function articleCacheKey(article = {}) {
+    return JSON.stringify({
+      title: article.title || "",
+      canonicalUrl: article.canonicalUrl || "",
+      topic: article.topic && article.topic.label,
+      classifierTopic: article.classifier && article.classifier.topic,
+      queries: (article.queries || []).slice(0, 9)
+    });
+  }
+
+  function searchCacheKey(stage, article, options = {}) {
+    return JSON.stringify({
+      stage,
+      article: articleCacheKey(article),
+      includeSimilar: Boolean(options.includeSimilar),
+      includeTagExpansion: Boolean(options.includeTagExpansion),
+      searchLimitPerType: options.searchLimitPerType,
+      similarLimit: options.similarLimit,
+      maxTagExpansions: options.maxTagExpansions,
+      tagEventLimit: options.tagEventLimit
+    });
+  }
 
   function setControlsDisabled(disabled) {
     refreshButton.disabled = disabled;
@@ -77,6 +209,10 @@
     }
   }
 
+  function invalidateRelatedUpdates() {
+    activeRelatedRunId += 1;
+  }
+
   function renderStatus(phase, title, detail) {
     global.__PM_POPUP_PHASES = global.__PM_POPUP_PHASES || [];
     global.__PM_POPUP_PHASES.push({ phase, title, detail, at: Date.now() });
@@ -85,7 +221,7 @@
 
   function renderLoading() {
     if (renderer.renderLoading) {
-      renderer.renderLoading(resultsRegion, "Finding related markets");
+      renderer.renderLoading(resultsRegion, "Finding related markets", "Reading the article before checking venues.");
     }
   }
 
@@ -327,19 +463,24 @@
     }));
   }
 
-  async function searchHyperliquidRelatedGroups(article, maxGroups = MAX_RELATED_RESULT_GROUPS) {
+  async function searchHyperliquidRelatedGroups(article, maxGroups = MAX_RELATED_RESULT_GROUPS, options = {}) {
     if (!hyperliquid || !hyperliquid.searchAndRank || !hyperliquid.groupCandidates) {
       return { candidates: [], resultGroups: [] };
     }
     try {
-      const candidates = await hyperliquid.searchAndRank(article, {
+      const timeoutMs = Number(options.timeoutMs) || OPTIONAL_HYPERLIQUID_TIMEOUT_MS;
+      const candidates = await timed("hyperliquid-fetch", () => hyperliquid.searchAndRank(article, {
         fetchImpl: fetch.bind(global),
+        timeoutMs,
         minConfidence: MAYBE_MIN_CONFIDENCE,
         maxResults: Math.min(12, maxGroups)
-      });
+      }), { maxGroups: Math.min(12, maxGroups), timeoutMs });
       return {
         candidates,
-        resultGroups: hyperliquid.groupCandidates(candidates, { maxGroups })
+        resultGroups: timedSync("hyperliquid-grouping", () => hyperliquid.groupCandidates(candidates, { maxGroups }), {
+          candidateCount: candidates.length,
+          maxGroups
+        })
       };
     } catch (error) {
       warnNonFatal("Hyperliquid related-market query failed; keeping the other venue results.", error);
@@ -385,7 +526,7 @@
     }
   }
 
-  async function enrichTraderCounts(groups) {
+  async function enrichTraderCounts(groups, options = {}) {
     if (!polymarket.enrichGroupsWithTraderCounts || !Array.isArray(groups) || !groups.length) {
       return groups;
     }
@@ -395,11 +536,13 @@
       return groups;
     }
 
-    const enrichedPolymarketGroups = await polymarket.enrichGroupsWithTraderCounts(polymarketGroups, {
+    const timeoutMs = Number(options.timeoutMs) || OPTIONAL_TRADER_TIMEOUT_MS;
+    const cacheKey = `traders:${polymarketGroups.map(groupIdentity).sort().join("|")}`;
+    const enrichedPolymarketGroups = await timed("trader-enrichment", () => cachedPromise(cacheKey, () => polymarket.enrichGroupsWithTraderCounts(polymarketGroups, {
       fetchImpl: fetch.bind(global),
-      timeoutMs: 2500,
+      timeoutMs,
       limit: 500
-    });
+    })), { groupCount: polymarketGroups.length, timeoutMs });
     const enrichedByKey = new Map(enrichedPolymarketGroups.map((group) => [groupIdentity(group), group]));
     return groups.map((group) => {
       if (isHyperliquidGroup(group)) {
@@ -668,7 +811,13 @@
     if (expandedRowKeys.size) {
       renderOptions.expandedRowKeys = Array.from(expandedRowKeys);
     }
-    renderer.renderResults(resultsRegion, sorted.slice(0, visibleCount), renderOptions);
+    timedSync("render-results", () => {
+      renderer.renderResults(resultsRegion, sorted.slice(0, visibleCount), renderOptions);
+    }, {
+      totalCount: sorted.length,
+      visibleCount,
+      title: renderOptions.title || "Related markets"
+    });
     if (progressive) {
       installRelatedPagination(sorted.length);
     }
@@ -679,6 +828,7 @@
   }
 
   function renderSearchReadyState() {
+    invalidateRelatedUpdates();
     clearRelatedPagination();
     setTradeViewOpen(false);
     expandedMarketKey = undefined;
@@ -693,6 +843,7 @@
   }
 
   function renderWatchlistEmptyState() {
+    invalidateRelatedUpdates();
     clearRelatedPagination();
     setTradeViewOpen(false);
     expandedMarketKey = undefined;
@@ -1274,51 +1425,180 @@
     return merged;
   }
 
-  async function searchRelatedGroups(article) {
-    const candidates = await polymarket.searchAndRank(article, {
+  function groupListSignature(groups = []) {
+    return groups.map((group) => {
+      const markets = Array.isArray(group.markets) ? group.markets.length : 0;
+      return `${groupIdentity(group)}:${group.traderCount || ""}:${markets}`;
+    }).join("|");
+  }
+
+  function polymarketStageOptions(options = {}) {
+    return {
       fetchImpl: fetch.bind(global),
-      minConfidence: MIN_CONFIDENCE,
+      minConfidence: options.minConfidence,
+      includeMaybe: Boolean(options.includeMaybe),
       includeSimilar: true,
-      includeTagExpansion: true,
+      includeTagExpansion: Boolean(options.includeTagExpansion),
       searchLimitPerType: 8,
       similarLimit: 20,
       maxTagExpansions: 3,
       tagEventLimit: 100,
       maxResults: MAX_RELATED_RANKED_MARKETS
-    });
-    let resultGroups = polymarket.groupCandidatesByEvent
-      ? polymarket.groupCandidatesByEvent(candidates, {
+    };
+  }
+
+  async function searchPolymarketRelatedStage(article, stage, options = {}) {
+    const stageOptions = polymarketStageOptions(options);
+    let candidates;
+
+    if (polymarket.fetchCandidates && polymarket.rankCandidates) {
+      const fetchedCandidates = await timed(`${stage}-fetch`, () => cachedPromise(
+        searchCacheKey(stage, article, stageOptions),
+        () => polymarket.fetchCandidates(article, stageOptions)
+      ), {
+        includeSimilar: stageOptions.includeSimilar,
+        includeTagExpansion: stageOptions.includeTagExpansion
+      });
+      candidates = timedSync(`${stage}-ranking`, () => polymarket.rankCandidates(fetchedCandidates, article, {
+        minConfidence: stageOptions.minConfidence,
+        includeMaybe: stageOptions.includeMaybe,
+        maxResults: stageOptions.maxResults
+      }), {
+        candidateCount: fetchedCandidates.length,
+        minConfidence: stageOptions.minConfidence,
+        includeMaybe: stageOptions.includeMaybe
+      });
+    } else {
+      candidates = await timed(`${stage}-fetch`, () => polymarket.searchAndRank(article, stageOptions), {
+        minConfidence: stageOptions.minConfidence,
+        includeMaybe: stageOptions.includeMaybe,
+        includeSimilar: stageOptions.includeSimilar,
+        includeTagExpansion: stageOptions.includeTagExpansion
+      });
+    }
+
+    const resultGroups = polymarket.groupCandidatesByEvent
+      ? timedSync(`${stage}-grouping`, () => polymarket.groupCandidatesByEvent(candidates, {
         maxGroups: MAX_RELATED_RESULT_GROUPS,
         article,
-        minParentConfidence: MIN_CONFIDENCE
+        minParentConfidence: stageOptions.minConfidence
+      }), {
+        candidateCount: candidates.length,
+        minParentConfidence: stageOptions.minConfidence
       })
       : candidates.slice(0, MAX_RELATED_RESULT_GROUPS);
 
-    let mergedCandidates = candidates;
+    return { candidates, resultGroups };
+  }
+
+  function createRelatedState(candidates = [], groups = []) {
+    return {
+      candidates,
+      groups,
+      renderedSignature: "",
+      enrichmentGeneration: 0
+    };
+  }
+
+  function mergeRelatedState(state, candidates = [], groups = []) {
+    const before = groupListSignature(state.groups);
+    state.candidates = mergeGroups(state.candidates, candidates, MAX_RELATED_RANKED_MARKETS);
+    state.groups = mergeGroups(state.groups, groups, MAX_RELATED_RESULT_GROUPS + 2);
+    return groupListSignature(state.groups) !== before;
+  }
+
+  function publishRelatedState(runId, article, state, options = {}) {
+    if (runId !== activeRelatedRunId) {
+      return false;
+    }
+    const displayableResultGroups = filterDisplayableGroups(state.groups);
+    const signature = groupListSignature(displayableResultGroups);
+    if (!options.force && signature === state.renderedSignature) {
+      return false;
+    }
+    state.renderedSignature = signature;
+    latestRelatedGroups = displayableResultGroups;
+    exposeDebugContext(article, state.candidates, displayableResultGroups);
+
+    if (!displayableResultGroups.length) {
+      return false;
+    }
+
+    if (options.preserveScroll) {
+      const shell = shellElement();
+      if (shell && shell.classList.contains("is-trade-view")) {
+        latestRenderedGroups = displayableResultGroups.slice();
+        latestRenderOptions = {
+          title: "Related markets",
+          progressive: true
+        };
+        return false;
+      }
+      if (relatedTab && !relatedTab.classList.contains("is-active")) {
+        return false;
+      }
+    }
+
+    renderStatus("complete", "Local scan complete", relatedDetail(displayableResultGroups.length));
+    renderGroups(displayableResultGroups, {
+      title: "Related markets",
+      progressive: true,
+      preserveScroll: Boolean(options.preserveScroll)
+    });
+    return true;
+  }
+
+  function applyEnrichedGroups(state, enrichedGroups) {
+    const enrichedByKey = new Map((enrichedGroups || []).map((group) => [groupIdentity(group), group]));
+    const before = groupListSignature(state.groups);
+    state.groups = state.groups.map((group) => enrichedByKey.get(groupIdentity(group)) || group);
+    return groupListSignature(state.groups) !== before;
+  }
+
+  function queueTraderEnrichment(runId, article, state) {
+    const generation = state.enrichmentGeneration + 1;
+    state.enrichmentGeneration = generation;
+    const groupsSnapshot = state.groups.slice();
+    void (async () => {
+      const settled = await settleWithin(
+        "trader-enrichment",
+        enrichTraderCounts(groupsSnapshot, { timeoutMs: OPTIONAL_TRADER_TIMEOUT_MS }),
+        OPTIONAL_TRADER_TIMEOUT_MS + 250
+      );
+      if (
+        settled.status !== "fulfilled" ||
+        runId !== activeRelatedRunId ||
+        generation !== state.enrichmentGeneration
+      ) {
+        return;
+      }
+      if (applyEnrichedGroups(state, settled.value)) {
+        publishRelatedState(runId, article, state, { preserveScroll: true });
+      }
+    })();
+  }
+
+  function queueRelatedLightUpdates(runId, article, state) {
+    queueTraderEnrichment(runId, article, state);
+  }
+
+  async function searchRelatedGroups(article) {
+    const primary = await searchPolymarketRelatedStage(article, "polymarket-primary", {
+      minConfidence: MIN_CONFIDENCE,
+      includeTagExpansion: false
+    });
+    let resultGroups = primary.resultGroups;
+    let mergedCandidates = primary.candidates;
 
     if (resultGroups.length < MAX_RELATED_RESULT_GROUPS && MAYBE_MIN_CONFIDENCE < MIN_CONFIDENCE) {
       try {
-        const fillerCandidates = await polymarket.searchAndRank(article, {
-          fetchImpl: fetch.bind(global),
+        const filler = await searchPolymarketRelatedStage(article, "polymarket-secondary", {
           minConfidence: MAYBE_MIN_CONFIDENCE,
           includeMaybe: true,
-          includeSimilar: true,
-          includeTagExpansion: true,
-          searchLimitPerType: 8,
-          similarLimit: 20,
-          maxTagExpansions: 3,
-          tagEventLimit: 100,
-          maxResults: MAX_RELATED_RANKED_MARKETS
+          includeTagExpansion: true
         });
-        const fillerGroups = polymarket.groupCandidatesByEvent
-          ? polymarket.groupCandidatesByEvent(fillerCandidates, {
-            maxGroups: MAX_RELATED_RESULT_GROUPS,
-            article,
-            minParentConfidence: MAYBE_MIN_CONFIDENCE
-          })
-          : fillerCandidates.slice(0, MAX_RELATED_RESULT_GROUPS);
-        resultGroups = mergeGroups(resultGroups, fillerGroups, MAX_RELATED_RESULT_GROUPS);
-        mergedCandidates = mergeGroups(mergedCandidates, fillerCandidates, MAX_RELATED_RANKED_MARKETS);
+        resultGroups = mergeGroups(resultGroups, filler.resultGroups, MAX_RELATED_RESULT_GROUPS);
+        mergedCandidates = mergeGroups(mergedCandidates, filler.candidates, MAX_RELATED_RANKED_MARKETS);
       } catch (error) {
         warnNonFatal("Secondary related-market query failed; keeping the primary results only.", error);
       }
@@ -1332,6 +1612,9 @@
   }
 
   async function run() {
+    const runId = activeRelatedRunId + 1;
+    activeRelatedRunId = runId;
+    resetTimings();
     setControlsDisabled(true);
     clearRelatedPagination();
     setTradeViewOpen(false);
@@ -1346,8 +1629,8 @@
     try {
       const usedCachedArticle = Boolean(latestRawArticle);
       const article = latestRawArticle || await (async () => {
-        const tab = await getActiveTab();
-        const extracted = await extractArticle(tab.id);
+        const tab = await timed("active-tab", () => getActiveTab());
+        const extracted = await timed("extraction", () => extractArticle(tab.id), { tabId: tab.id });
         latestRawArticle = extracted;
         return extracted;
       })();
@@ -1357,33 +1640,72 @@
         "Identifying entities, keywords, and topic."
       );
 
-      const classifierModel = await loadClassifierModel();
-      const enrichedArticle = signals.analyzeArticle(article, {
+      const classifierModel = await timed("classifier-model-load", () => loadClassifierModel());
+      const enrichedArticle = timedSync("local-analysis", () => signals.analyzeArticle(article, {
         analysisStrategy: LOCAL_MODEL_STRATEGY,
         classifierModel
+      }), {
+        textLength: String(article.cleanText || article.text || "").length
       });
       latestRelatedArticle = enrichedArticle;
       renderer.renderArticleContext(resultsRegion, enrichedArticle);
 
-      renderStatus("searching", "Searching markets", "Checking related events and markets.");
-      const { candidates, resultGroups } = await searchRelatedGroups(enrichedArticle);
-      const enrichedResultGroups = await enrichTraderCounts(resultGroups);
-      const displayableResultGroups = filterDisplayableGroups(enrichedResultGroups);
-      latestRelatedGroups = displayableResultGroups;
-      exposeDebugContext(enrichedArticle, candidates, displayableResultGroups);
+      renderStatus("searching", "Searching Polymarket", "Checking first-pass related markets.");
+      if (renderer.renderLoading) {
+        renderer.renderLoading(resultsRegion, "Finding related markets", "Checking Polymarket first.");
+      }
+      const primary = await searchPolymarketRelatedStage(enrichedArticle, "polymarket-primary", {
+        minConfidence: MIN_CONFIDENCE,
+        includeTagExpansion: false
+      });
+      const relatedState = createRelatedState(primary.candidates, primary.resultGroups);
+      const didRenderPrimary = publishRelatedState(runId, enrichedArticle, relatedState, { force: true });
 
-      if (!displayableResultGroups.length) {
-        renderStatus("complete", "Local scan complete", "No related events found");
-        renderer.renderEmpty(resultsRegion, "No strong market match was found.", "The article was readable, but the related markets were weak or unavailable.", {
-          title: "Related markets"
-        });
+      if (didRenderPrimary) {
+        queueRelatedLightUpdates(runId, enrichedArticle, relatedState);
         return;
       }
 
-      renderStatus("complete", "Local scan complete", relatedDetail(displayableResultGroups.length));
-      renderGroups(displayableResultGroups, {
+      renderStatus("searching", "Checking broader matches", "No first-pass market cards yet.");
+      if (renderer.renderLoading) {
+        renderer.renderLoading(resultsRegion, "Checking broader matches", "Trying broader Polymarket and Hyperliquid matches.");
+      }
+      const [secondarySettled, hyperliquidSettled] = await Promise.all([
+        settleWithin(
+          "polymarket-secondary",
+          searchPolymarketRelatedStage(enrichedArticle, "polymarket-secondary", {
+            minConfidence: MAYBE_MIN_CONFIDENCE,
+            includeMaybe: true,
+            includeTagExpansion: true
+          }),
+          OPTIONAL_POLYMARKET_TIMEOUT_MS
+        ),
+        settleWithin(
+          "hyperliquid",
+          searchHyperliquidRelatedGroups(enrichedArticle, MAX_RELATED_RESULT_GROUPS, {
+            timeoutMs: OPTIONAL_HYPERLIQUID_TIMEOUT_MS
+          }),
+          OPTIONAL_HYPERLIQUID_TIMEOUT_MS + 250
+        )
+      ]);
+
+      if (secondarySettled.status === "fulfilled") {
+        mergeRelatedState(relatedState, secondarySettled.value.candidates, secondarySettled.value.resultGroups);
+      }
+      if (hyperliquidSettled.status === "fulfilled") {
+        mergeRelatedState(relatedState, hyperliquidSettled.value.candidates, hyperliquidSettled.value.resultGroups);
+      }
+      if (publishRelatedState(runId, enrichedArticle, relatedState, { force: true })) {
+        queueTraderEnrichment(runId, enrichedArticle, relatedState);
+        return;
+      }
+
+      latestRelatedGroups = [];
+      exposeDebugContext(enrichedArticle, relatedState.candidates, []);
+      renderStatus("complete", "Local scan complete", "No related events found");
+      renderer.renderEmpty(resultsRegion, "No strong market match was found.", "The article was readable, but related markets were weak, unavailable, or slow to respond.", {
         title: "Related markets",
-        progressive: true
+        detail: "Partial"
       });
     } catch (error) {
       if (error instanceof ArticleError) {
@@ -1404,6 +1726,7 @@
   }
 
   async function runMarketSearch(query) {
+    invalidateRelatedUpdates();
     const normalized = String(query || "").trim();
     if (normalized.length < 2) {
       searchInput.focus();
@@ -1462,6 +1785,7 @@
   }
 
   async function runTrendingMarkets() {
+    invalidateRelatedUpdates();
     setControlsDisabled(true);
     clearRelatedPagination();
     setTradeViewOpen(false);

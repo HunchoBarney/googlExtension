@@ -40,11 +40,12 @@ test("renders loading and complete status states", () => {
 test("renders the market search loading surface", () => {
   const { renderer, results } = setupRenderer();
 
-  renderer.renderLoading(results);
+  renderer.renderLoading(results, "Finding related markets", "Checking Polymarket first.");
 
   assert.ok(results.classList.contains("is-loading"));
   assert.ok(results.querySelector(".loader"));
   assert.match(results.textContent, /Finding related markets/);
+  assert.match(results.textContent, /Checking Polymarket first/);
 
   renderer.renderEmpty(results, "No markets found", "Try another topic.");
   assert.equal(results.classList.contains("is-loading"), false);

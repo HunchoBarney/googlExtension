@@ -263,6 +263,8 @@ async function readPopupState(root, sessionId) {
       statusText: document.querySelector("#status-region")?.innerText || "",
       bodyText: document.body?.innerText || "",
       phases: globalThis.__PM_POPUP_PHASES || [],
+      timings: globalThis.__PM_POPUP_TIMINGS || [],
+      timingSummary: globalThis.__PM_POPUP_TIMING_SUMMARY || {},
       articleContext: globalThis.__PM_ARTICLE_CONTEXT || null,
       polymarketCandidates: globalThis.__PM_POLYMARKET_CANDIDATES || [],
       displayGroups: globalThis.__PM_DISPLAY_GROUPS || [],
@@ -289,6 +291,24 @@ async function readPopupState(root, sessionId) {
         searchPlaceholder: document.querySelector("#market-search-input")?.getAttribute("placeholder") || "",
         activeTabText: document.querySelector(".tab-button.is-active")?.textContent.trim() || "",
         activeElementId: document.activeElement?.id || "",
+        resultsLoading: document.querySelector("#results-region")?.classList.contains("is-loading") || false,
+        loadingStateCount: document.querySelectorAll("#results-region .loading-state").length,
+        refreshDisabled: Boolean(document.querySelector("#refresh-button")?.disabled),
+        searchDisabled: Boolean(document.querySelector("#market-search-button")?.disabled || document.querySelector("#market-search-input")?.disabled),
+        firstCardHitTarget: (() => {
+          const card = document.querySelector("a.market-card");
+          if (!card) {
+            return { blocked: false, tag: "", className: "", text: "" };
+          }
+          const rect = card.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.left + Math.min(rect.width / 2, 24), rect.top + Math.min(rect.height / 2, 24));
+          return {
+            blocked: !(hit && hit.closest("a.market-card")),
+            tag: hit ? hit.tagName : "",
+            className: hit ? String(hit.className || "") : "",
+            text: hit ? String(hit.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80) : ""
+          };
+        })(),
         sortLabel: document.querySelector(".sort-button span")?.textContent.trim() || "",
         footerCount: document.querySelectorAll(".privacy-footer").length,
         statusText: document.querySelector("#status-region")?.innerText.replace(/\\s+/g, " ").trim() || "",
@@ -423,6 +443,9 @@ async function waitForPopupCondition(root, sessionId, predicate, label, timeoutM
     tradingViewReady: latest && latest.visual && latest.visual.tradingViewReady,
     tradingViewError: latest && latest.visual && latest.visual.tradingViewError,
     tradingViewIframeSrc: latest && latest.visual && latest.visual.tradingViewIframeSrc,
+    menuOpen: latest && latest.visual && latest.visual.menuOpen,
+    menuExpanded: latest && latest.visual && latest.visual.menuExpanded,
+    activeElementId: latest && latest.visual && latest.visual.activeElementId,
     emptyText: latest && latest.emptyText,
     errorText: latest && latest.errorText
   })}`);
@@ -997,6 +1020,7 @@ async function runActionPopupSmoke({
   chromePath,
   headless = true,
   pauseBeforeClickMs = 0,
+  postCompleteWaitMs = 0,
   keepOpenMs = 0,
   leaveOpen = false,
   skipClicks = false,
@@ -1014,6 +1038,7 @@ async function runActionPopupSmoke({
     extensionPath,
     userDataDir,
     pauseBeforeClickMs,
+    postCompleteWaitMs,
     keepOpenMs,
     leaveOpen,
     skipClicks,
@@ -1090,6 +1115,9 @@ async function runActionPopupSmoke({
     report.popupOpenedInBrowser = true;
     const popupSessionId = await attachPopup(root, popupTarget);
     await waitForFinalPopupState(root, popupSessionId);
+    if (postCompleteWaitMs > 0) {
+      await delay(postCompleteWaitMs);
+    }
     await waitForPopupImages(root, popupSessionId);
     const popupState = await readPopupState(root, popupSessionId);
 
@@ -1098,6 +1126,8 @@ async function runActionPopupSmoke({
     report.cardLinks = popupState.cardLinks;
     report.cardTitles = popupState.cardTitles;
     report.visual = popupState.visual;
+    report.timings = popupState.timings;
+    report.timingSummary = popupState.timingSummary;
     report.articleContext = popupState.articleContext;
     report.polymarketCandidates = popupState.polymarketCandidates;
     report.displayGroups = popupState.displayGroups;
@@ -1189,6 +1219,23 @@ async function runActionPopupSmoke({
     if (report.cardLinks.length > 0 && !/Local scan complete/.test(report.visual.statusText)) {
       throw new Error(`Extension popup missing target local scan copy: ${report.visual.statusText}`);
     }
+    if (report.cardLinks.length > 0 && (
+      report.visual.resultsLoading ||
+      report.visual.loadingStateCount > 0 ||
+      report.visual.refreshDisabled ||
+      report.visual.searchDisabled
+    )) {
+      throw new Error(`Extension popup reported complete while still blocking interaction: ${JSON.stringify({
+        statusText: report.visual.statusText,
+        resultsLoading: report.visual.resultsLoading,
+        loadingStateCount: report.visual.loadingStateCount,
+        refreshDisabled: report.visual.refreshDisabled,
+        searchDisabled: report.visual.searchDisabled
+      })}`);
+    }
+    if (report.cardLinks.length > 0 && report.visual.firstCardHitTarget.blocked) {
+      throw new Error(`Extension popup first card is not the hit target: ${JSON.stringify(report.visual.firstCardHitTarget)}`);
+    }
 
     const expectedPhases = ["reading", "extracting", "searching", "complete"];
     for (const phase of expectedPhases) {
@@ -1221,7 +1268,10 @@ async function runActionPopupSmoke({
         reason: "demo mode leaves the popup open without clicking result cards"
       };
     } else if (!report.cardLinks.length) {
-      if (!/No strong/i.test(report.finalStatus) && !/No strong Polymarket match/i.test(report.emptyText)) {
+      if (
+        !/No strong|No related events found/i.test(report.finalStatus) &&
+        !/No strong|No related events found/i.test(report.emptyText)
+      ) {
         throw new Error("The browser smoke rendered no clickable cards without reaching the no-match state.");
       }
       report.clickedLinkCheck = {
@@ -1404,12 +1454,20 @@ async function runActionPopupSmoke({
     for (const href of skipClicks ? [] : report.cardLinks.slice(1, 3)) {
       const linkPage = await context.newPage();
       try {
-        const response = await linkPage.goto(href, {
-          waitUntil: "domcontentloaded",
-          timeout: 45000
-        });
+        let response = null;
+        let navigationError = null;
+        try {
+          response = await linkPage.goto(href, {
+            waitUntil: "domcontentloaded",
+            timeout: 15000
+          });
+        } catch (error) {
+          navigationError = error;
+        }
         const finalUrl = linkPage.url();
-        const finalHost = new URL(finalUrl).hostname;
+        const finalHost = finalUrl === "about:blank"
+          ? new URL(href).hostname
+          : new URL(finalUrl).hostname;
         if (!isSupportedVenueHost(finalHost)) {
           throw new Error(`Venue link navigated to unexpected host: ${finalUrl}`);
         }
@@ -1417,6 +1475,7 @@ async function runActionPopupSmoke({
           method: "direct-open",
           href,
           finalUrl,
+          navigationError: navigationError ? String(navigationError.message || navigationError).split("\n")[0] : "",
           status: response ? response.status() : null,
           title: await linkPage.title()
         });
@@ -1455,6 +1514,7 @@ async function main() {
   const demoMode = hasFlag("demo");
   const headless = demoMode ? false : !hasFlag("headed");
   const pauseBeforeClickMs = argNumber("pause-before-click-ms", 0);
+  const postCompleteWaitMs = argNumber("post-complete-wait-ms", 0);
   const keepOpenMs = argNumber("keep-open-ms", 0);
   const leaveOpen = demoMode || hasFlag("leave-open");
   const skipClicks = demoMode || hasFlag("skip-clicks");
@@ -1472,6 +1532,7 @@ async function main() {
     chromePath,
     headless,
     pauseBeforeClickMs,
+    postCompleteWaitMs,
     keepOpenMs,
     leaveOpen,
     skipClicks,
@@ -1489,6 +1550,12 @@ async function main() {
   console.log(`Activation: ${result.activationMethod}`);
   console.log(`Pre-activation tab access blocked: ${result.preActivationAccess.blocked}`);
   console.log(`Popup phases: ${result.phases.join(" -> ")}`);
+  if (result.timings && result.timings.length) {
+    const timingLine = result.timings
+      .map((timing) => `${timing.label}=${timing.durationMs}ms`)
+      .join(", ");
+    console.log(`Popup timings: ${timingLine}`);
+  }
   console.log(`Final popup status: ${result.finalStatus.replace(/\s+/g, " ")}`);
   if (result.articleContext) {
     const articleContext = result.articleContext;

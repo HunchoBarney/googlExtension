@@ -44,6 +44,24 @@
     : function canonicalKey(value) {
       return normalizeWhitespace(value).toLowerCase().replace(/[^\w$.\s-]/g, "").replace(/\s+/g, " ");
     };
+  const TOKEN_CACHE = new Map();
+  const TOKEN_SET_CACHE = new Map();
+  const CANDIDATE_TEXT_CACHE = new WeakMap();
+  const CANDIDATE_TOPIC_PROFILE_CACHE = new WeakMap();
+  const CANDIDATE_ANGLE_PROFILE_CACHE = new WeakMap();
+  const ARTICLE_PROFILE_CACHE = new WeakMap();
+  const TOKEN_CACHE_LIMIT = 6000;
+  const TOKEN_SET_CACHE_LIMIT = 6000;
+  const GENERIC_SOLO_ENTITIES = new Set(["house", "senate", "congress", "us", "u.s.", "un", "eu"]);
+  const HIGH_SIGNAL_ENTITY_TYPES = new Set(["crypto", "person", "company", "ticker", "institution", "sports"]);
+
+  function setBoundedCache(cache, key, value, limit) {
+    if (cache.size >= limit) {
+      cache.clear();
+    }
+    cache.set(key, value);
+    return value;
+  }
   const tokenSequenceIncludes = signals && signals.tokenSequenceIncludes
     ? signals.tokenSequenceIncludes
     : function tokenSequenceIncludes(haystackTokens, needleTokens) {
@@ -73,8 +91,17 @@
     };
 
   function tokenize(value) {
-    const matches = canonicalKey(value).match(/[a-z0-9][a-z0-9'$-]*/g);
-    return matches ? matches.filter((token) => !STOPWORDS.has(token) && token.length > 1) : [];
+    const key = canonicalKey(value);
+    if (TOKEN_CACHE.has(key)) {
+      return TOKEN_CACHE.get(key);
+    }
+    const matches = key.match(/[a-z0-9][a-z0-9'$-]*/g);
+    return setBoundedCache(
+      TOKEN_CACHE,
+      key,
+      matches ? matches.filter((token) => !STOPWORDS.has(token) && token.length > 1) : [],
+      TOKEN_CACHE_LIMIT
+    );
   }
 
   function textHasTerm(text, term) {
@@ -82,7 +109,88 @@
     if (!needleTokens.length) {
       return false;
     }
+    if (needleTokens.length === 1) {
+      return tokenSet(text).has(needleTokens[0]);
+    }
     return tokenSequenceIncludes(tokenize(text), needleTokens);
+  }
+
+  function tokenSet(value) {
+    const key = canonicalKey(value);
+    if (TOKEN_SET_CACHE.has(key)) {
+      return TOKEN_SET_CACHE.get(key);
+    }
+    return setBoundedCache(TOKEN_SET_CACHE, key, new Set(tokenize(key)), TOKEN_SET_CACHE_LIMIT);
+  }
+
+  function candidateTextBundle(candidate = {}) {
+    if (candidate && typeof candidate === "object" && CANDIDATE_TEXT_CACHE.has(candidate)) {
+      return CANDIDATE_TEXT_CACHE.get(candidate);
+    }
+    const titleText = canonicalKey(`${candidate.title || ""} ${candidate.eventTitle || ""}`);
+    const descriptionText = canonicalKey(`${candidate.title || ""} ${candidate.eventTitle || ""} ${candidate.description || ""}`);
+    const fullText = canonicalKey(`${candidate.title || ""} ${candidate.eventTitle || ""} ${candidate.description || ""} ${candidate.category || ""} ${(candidate.tags || []).join(" ")}`);
+    const bundle = {
+      titleText,
+      descriptionText,
+      fullText
+    };
+    if (candidate && typeof candidate === "object") {
+      CANDIDATE_TEXT_CACHE.set(candidate, bundle);
+    }
+    return bundle;
+  }
+
+  function articleProfile(article = {}) {
+    if (article && typeof article === "object" && ARTICLE_PROFILE_CACHE.has(article)) {
+      return ARTICLE_PROFILE_CACHE.get(article);
+    }
+    const entities = article.centralEntities && article.centralEntities.length
+      ? article.centralEntities
+      : (article.entities && article.entities.top ? article.entities.top : []);
+    const keywordKeys = (article.keywords || [])
+      .slice(0, 12)
+      .map((keyword) => canonicalKey(keyword.text))
+      .filter((key) => key && key.length >= 3);
+    const signalTokens = new Set(tokenize(article.title || "").slice(0, 14));
+    for (const key of keywordKeys) {
+      for (const token of tokenize(key)) {
+        signalTokens.add(token);
+      }
+    }
+    for (const entity of entities.slice(0, 12)) {
+      for (const key of entitySearchKeys(entity)) {
+        for (const token of tokenize(key)) {
+          signalTokens.add(token);
+        }
+      }
+    }
+    const topicLabel = article.topic && article.topic.label;
+    for (const term of (TOPIC_TERMS[topicLabel] || [])) {
+      for (const token of tokenize(term)) {
+        signalTokens.add(token);
+      }
+    }
+
+    const profile = {
+      titleKey: canonicalKey(article.title || ""),
+      textKey: canonicalKey(`${article.title || ""} ${article.cleanText || article.text || ""}`),
+      titleTokens: new Set(tokenize(article.title || "").slice(0, 14)),
+      topicLabel,
+      titleHasCryptoAngle: /\b(bitcoin|btc|ethereum|eth|crypto|token|blockchain|defi|stablecoin)\b/i.test(canonicalKey(article.title || "")),
+      hasCryptoEntities: Boolean(article.entities && article.entities.crypto && article.entities.crypto.length),
+      entities,
+      highSignalEntities: entities.filter((entity) => entity && HIGH_SIGNAL_ENTITY_TYPES.has(entity.type)),
+      keywordKeys,
+      signalTokens,
+      specificPhrases: (article.queries || [])
+        .filter((query) => /\b(pixel watch|apple watch|iphone|galaxy watch|playstation|xbox)\b/i.test(query))
+        .slice(0, 3)
+    };
+    if (article && typeof article === "object") {
+      ARTICLE_PROFILE_CACHE.set(article, profile);
+    }
+    return profile;
   }
 
   function toNumber(value) {
@@ -639,37 +747,29 @@
   }
 
   function entityScore(candidate, article) {
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
-    const title = canonicalKey(`${candidate.title} ${candidate.eventTitle}`);
-    const articleTitle = canonicalKey(article.title || "");
-    const articleTopic = article.topic && article.topic.label;
-    const articleTitleHasCryptoAngle = /\b(bitcoin|btc|ethereum|eth|crypto|token|blockchain|defi|stablecoin)\b/i.test(articleTitle);
-    const hasCryptoEntities = Boolean(article.entities && article.entities.crypto && article.entities.crypto.length);
-    const genericSoloEntities = new Set(["house", "senate", "congress", "us", "u.s.", "un", "eu"]);
+    const { fullText: text, titleText: title } = candidateTextBundle(candidate);
+    const profile = articleProfile(article);
     let score = 0;
-    const entities = article.centralEntities && article.centralEntities.length
-      ? article.centralEntities
-      : (article.entities && article.entities.top ? article.entities.top : []);
 
-    for (const entity of entities.slice(0, 12)) {
+    for (const entity of profile.entities.slice(0, 12)) {
       const keys = entitySearchKeys(entity);
       if (!keys.length) {
         continue;
       }
-      const inArticleTitle = keys.some((key) => textHasTerm(articleTitle, key));
-      if (genericSoloEntities.has(canonicalKey(entity.text))) {
+      const inArticleTitle = keys.some((key) => textHasTerm(profile.titleKey, key));
+      if (GENERIC_SOLO_ENTITIES.has(canonicalKey(entity.text))) {
         continue;
       }
       if (entity.type === "person" && !inArticleTitle) {
         continue;
       }
-      if (entity.type === "crypto" && !inArticleTitle && !articleTitleHasCryptoAngle) {
+      if (entity.type === "crypto" && !inArticleTitle && !profile.titleHasCryptoAngle) {
         continue;
       }
-      if (entity.type === "company" && hasCryptoEntities && !inArticleTitle) {
+      if (entity.type === "company" && profile.hasCryptoEntities && !inArticleTitle) {
         continue;
       }
-      if (entity.type === "place" && !inArticleTitle && !["geopolitics", "weather/climate"].includes(articleTopic)) {
+      if (entity.type === "place" && !inArticleTitle && !["geopolitics", "weather/climate"].includes(profile.topicLabel)) {
         continue;
       }
       const typeWeight = {
@@ -696,14 +796,9 @@
   }
 
   function keywordScore(candidate, article) {
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description}`);
-    const title = canonicalKey(`${candidate.title} ${candidate.eventTitle}`);
+    const { descriptionText: text, titleText: title } = candidateTextBundle(candidate);
     let score = 0;
-    for (const keyword of (article.keywords || []).slice(0, 12)) {
-      const key = canonicalKey(keyword.text);
-      if (!key || key.length < 3) {
-        continue;
-      }
+    for (const key of articleProfile(article).keywordKeys) {
       if (textHasTerm(title, key)) {
         score += 9;
       } else if (textHasTerm(text, key)) {
@@ -720,8 +815,8 @@
   }
 
   function titleOverlapScore(candidate, article) {
-    const articleTokens = new Set(tokenize(article.title || "").slice(0, 14));
-    const marketTokens = new Set(tokenize(`${candidate.title} ${candidate.eventTitle}`));
+    const articleTokens = articleProfile(article).titleTokens;
+    const marketTokens = new Set(tokenize(candidateTextBundle(candidate).titleText));
     if (!articleTokens.size || !marketTokens.size) {
       return 0;
     }
@@ -767,30 +862,37 @@
   }
 
   function candidateTopicProfile(candidate) {
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
+    if (candidate && typeof candidate === "object" && CANDIDATE_TOPIC_PROFILE_CACHE.has(candidate)) {
+      return CANDIDATE_TOPIC_PROFILE_CACHE.get(candidate);
+    }
+    const text = candidateTextBundle(candidate).fullText;
     const scores = Object.fromEntries(Object.entries(TOPIC_TERMS).map(([topic, terms]) => [topic, topicTermHits(text, terms)]));
     const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const [label, score] = sorted[0];
     const nextScore = sorted[1] ? sorted[1][1] : 0;
-    return {
+    const profile = {
       label: score >= 2 && score >= nextScore + 1 ? label : "",
       score,
       scores
     };
+    if (candidate && typeof candidate === "object") {
+      CANDIDATE_TOPIC_PROFILE_CACHE.set(candidate, profile);
+    }
+    return profile;
   }
 
   function topicScore(candidate, article) {
-    const topic = article.topic && article.topic.label;
+    const topic = articleProfile(article).topicLabel;
     if (!topic || topic === "general") {
       return 0;
     }
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
+    const text = candidateTextBundle(candidate).fullText;
     const topicTerms = TOPIC_TERMS[topic] || [];
     return topicTerms.some((term) => textHasTerm(text, term)) ? 10 : 0;
   }
 
   function topicMismatchPenalty(candidate, article) {
-    const articleTopic = article.topic && article.topic.label;
+    const articleTopic = articleProfile(article).topicLabel;
     if (!articleTopic || articleTopic === "general") {
       return 0;
     }
@@ -809,13 +911,13 @@
   }
 
   function strictTopicSignalPenalty(candidate, article) {
-    const articleTopic = article.topic && article.topic.label;
+    const articleTopic = articleProfile(article).topicLabel;
     const strictTopics = new Set(["weather/climate", "sports", "entertainment"]);
     if (!strictTopics.has(articleTopic)) {
       return 0;
     }
 
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
+    const text = candidateTextBundle(candidate).fullText;
     const ownTopicHits = topicTermHits(text, TOPIC_TERMS[articleTopic] || []);
     if (ownTopicHits > 0) {
       return 0;
@@ -835,13 +937,14 @@
   }
 
   function speechMentionPenalty(candidate, article) {
-    const articleTopic = article.topic && article.topic.label;
+    const profile = articleProfile(article);
+    const articleTopic = profile.topicLabel;
     if (articleTopic !== "geopolitics") {
       return 0;
     }
 
-    const candidateText = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description}`);
-    const articleText = canonicalKey(`${article.title || ""} ${article.cleanText || article.text || ""}`);
+    const candidateText = candidateTextBundle(candidate).descriptionText;
+    const articleText = profile.textKey;
     const isSpeechMarket = /\bwhat will .{0,60} say\b|\bwill .{0,60} say\b|\bsay [a-z0-9"']+ during\b|\bmention\b|\bword\b/.test(candidateText);
     if (!isSpeechMarket) {
       return 0;
@@ -866,7 +969,7 @@
       };
     }
 
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
+    const text = candidateTextBundle(candidate).fullText;
     let boost = 0;
     let angleHits = 0;
     let excludeHits = 0;
@@ -923,7 +1026,10 @@
   }
 
   function candidateAngleProfile(candidate) {
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
+    if (candidate && typeof candidate === "object" && CANDIDATE_ANGLE_PROFILE_CACHE.has(candidate)) {
+      return CANDIDATE_ANGLE_PROFILE_CACHE.get(candidate);
+    }
+    const text = candidateTextBundle(candidate).fullText;
     const labels = new Set();
     const priceNumberPattern = /\b(hit|reach|reaches|above|below|over|under|at|to|move|moves|up|down)\b.{0,45}(?:\$|[0-9]+(?:k|m|,|\b)|all time high|ath)|(?:\$|[0-9]+(?:k|m|,|\b)).{0,35}\b(hit|reach|above|below|over|under|price|target)\b/i;
 
@@ -961,25 +1067,21 @@
       labels.add("weather/climate");
     }
 
-    return {
+    const profile = {
       labels: Array.from(labels),
       text
     };
+    if (candidate && typeof candidate === "object") {
+      CANDIDATE_ANGLE_PROFILE_CACHE.set(candidate, profile);
+    }
+    return profile;
   }
 
   function centralEntityHits(candidate, article) {
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
-    const title = canonicalKey(`${candidate.title} ${candidate.eventTitle}`);
-    const highSignalTypes = new Set(["crypto", "person", "company", "ticker", "institution", "sports"]);
-    const entities = article.centralEntities && article.centralEntities.length
-      ? article.centralEntities
-      : ((article.entities && article.entities.top) || []);
+    const { fullText: text, titleText: title } = candidateTextBundle(candidate);
     const hits = [];
 
-    for (const entity of entities.slice(0, 10)) {
-      if (!highSignalTypes.has(entity.type)) {
-        continue;
-      }
+    for (const entity of articleProfile(article).highSignalEntities.slice(0, 10)) {
       const keys = entitySearchKeys(entity);
       const inTitle = keys.some((key) => textHasTerm(title, key));
       const inText = inTitle || keys.some((key) => textHasTerm(text, key));
@@ -1072,18 +1174,10 @@
   }
 
   function highSignalEntityScore(candidate, article) {
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
-    const title = canonicalKey(`${candidate.title} ${candidate.eventTitle}`);
+    const { fullText: text, titleText: title } = candidateTextBundle(candidate);
     let score = 0;
-    const highSignalTypes = new Set(["crypto", "person", "company", "ticker", "institution", "sports"]);
-    const entities = article.centralEntities && article.centralEntities.length
-      ? article.centralEntities
-      : (article.entities && article.entities.top ? article.entities.top : []);
 
-    for (const entity of entities.slice(0, 12)) {
-      if (!highSignalTypes.has(entity.type)) {
-        continue;
-      }
+    for (const entity of articleProfile(article).highSignalEntities.slice(0, 12)) {
       const keys = entitySearchKeys(entity);
       if (keys.some((key) => textHasTerm(title, key))) {
         score += 2;
@@ -1161,10 +1255,22 @@
     return "reject";
   }
 
+  function hasQuickArticleSignal(candidate, article) {
+    const profile = articleProfile(article);
+    if (!profile.signalTokens || !profile.signalTokens.size) {
+      return true;
+    }
+    const candidateTokens = tokenSet(candidateTextBundle(candidate).fullText);
+    for (const token of profile.signalTokens) {
+      if (candidateTokens.has(token)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function specificArticlePhrases(article) {
-    return (article.queries || [])
-      .filter((query) => /\b(pixel watch|apple watch|iphone|galaxy watch|playstation|xbox)\b/i.test(query))
-      .slice(0, 3);
+    return articleProfile(article).specificPhrases;
   }
 
   /**
@@ -1191,7 +1297,7 @@
     let productSpecificityCap = null;
     const specificPhrases = specificArticlePhrases(article);
     if (specificPhrases.length) {
-      const candidateText = `${candidate.title} ${candidate.eventTitle} ${candidate.description}`;
+      const candidateText = candidateTextBundle(candidate).descriptionText;
       const hasSpecificPhrase = specificPhrases.some((phrase) => textHasTerm(candidateText, phrase));
       if (!hasSpecificPhrase && entities > 0) {
         productSpecificityPenalty = -8;
@@ -1250,6 +1356,7 @@
     const maxResults = options.maxResults || DEFAULT_MAX_RESULTS;
     return dedupeCandidates(candidates)
       .filter(isDisplayableCandidate)
+      .filter((candidate) => hasQuickArticleSignal(candidate, article))
       .map((candidate) => rankCandidate(candidate, article))
       .filter((candidate) => candidate.confidence >= minConfidence)
       .filter((candidate) => candidate.matchTier === "strong" || (options.includeMaybe && candidate.matchTier === "maybe"))
@@ -1259,8 +1366,7 @@
 
   function querySearchScore(candidate, query) {
     const queryTokens = tokenize(query);
-    const title = canonicalKey(`${candidate.title} ${candidate.eventTitle}`);
-    const text = canonicalKey(`${candidate.title} ${candidate.eventTitle} ${candidate.description} ${candidate.category} ${candidate.tags.join(" ")}`);
+    const { fullText: text, titleText: title } = candidateTextBundle(candidate);
     let relevance = 0;
 
     for (const token of queryTokens) {
