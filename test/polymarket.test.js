@@ -5,6 +5,59 @@ const signals = require("../src/lib/articleSignals");
 globalThis.PMArticleSignals = signals;
 const polymarket = require("../src/lib/polymarket");
 
+function fakeWebSocketClass() {
+  return class FakeWebSocket {
+    static instances = [];
+
+    constructor(url) {
+      this.url = url;
+      this.readyState = 0;
+      this.sent = [];
+      this.listeners = new Map();
+      this.constructor.instances.push(this);
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) || [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    emit(type, event = {}) {
+      for (const listener of this.listeners.get(type) || []) {
+        listener(event);
+      }
+    }
+
+    open() {
+      this.readyState = 1;
+      this.emit("open");
+    }
+
+    message(payload) {
+      this.emit("message", { data: JSON.stringify(payload) });
+    }
+
+    rawMessage(payload) {
+      this.emit("message", { data: payload });
+    }
+
+    serverClose() {
+      this.readyState = 3;
+      this.emit("close", { code: 1006 });
+    }
+
+    send(value) {
+      this.sent.push(value);
+    }
+
+    close() {
+      this.readyState = 3;
+      this.emit("close", { code: 1000 });
+    }
+  };
+}
+
 function article(overrides = {}) {
   return signals.analyzeArticle({
     title: "Bitcoin rallies as ETF inflows accelerate",
@@ -69,13 +122,14 @@ test("fetches live CLOB books and price history for trade view data", async () =
           : { bids: [{ price: "0.66", size: "789" }], asks: [{ price: "0.69", size: "987" }] }
       };
     }
+    const token = parsed.searchParams.get("market");
     return {
       ok: true,
       status: 200,
       json: async () => ({
         history: [
-          { t: 1780000000, p: 0.3 },
-          { t: 1780086400, p: 0.32 }
+          { t: 1780000000, p: token === "no-token" ? 0.7 : 0.3 },
+          { t: 1780086400, p: token === "no-token" ? 0.68 : 0.32 }
         ]
       })
     };
@@ -88,9 +142,226 @@ test("fetches live CLOB books and price history for trade view data", async () =
   assert.equal(result.tradeBooksByTokenId["no-token"].asks[0].size, 987);
   assert.equal(result.tradeChartHistoryByTokenId["yes-token"]["1M"][1].p, 0.32);
   assert.equal(result.tradeChartHistoryByTokenId["yes-token"].ALL.length, 2);
+  assert.equal(result.tradeChartHistoryByTokenId["no-token"]["1M"][1].p, 0.68);
+  assert.equal(result.tradeChartHistoryByTokenId["no-token"].ALL.length, 2);
   assert.ok(urls.some((url) => url === "https://clob.polymarket.com/book?token_id=yes-token"));
   assert.ok(urls.some((url) => url === "https://clob.polymarket.com/book?token_id=no-token"));
   assert.ok(urls.some((url) => url.startsWith("https://clob.polymarket.com/prices-history?market=yes-token")));
+  assert.ok(urls.some((url) => url.startsWith("https://clob.polymarket.com/prices-history?market=no-token")));
+  assert.equal(urls.some((url) => new URL(url).searchParams.get("interval") === "1y"), false);
+});
+
+test("streams Polymarket books and trades, heartbeats, reconnects, and stops cleanly", () => {
+  const WebSocketImpl = fakeWebSocketClass();
+  const intervals = [];
+  const retries = [];
+  const books = [];
+  const prices = [];
+  let opens = 0;
+  let closes = 0;
+  const stop = polymarket.openTradeStream({
+    clobTokenIds: ["yes-token", "no-token"],
+    tradeBooksByTokenId: {
+      "yes-token": {
+        bids: [{ price: 0.31, size: 10 }],
+        asks: [{ price: 0.33, size: 12 }]
+      }
+    }
+  }, {
+    onOpen() {
+      opens += 1;
+    },
+    onClose() {
+      closes += 1;
+    },
+    onBook(update) {
+      books.push(update);
+    },
+    onPrice(update) {
+      prices.push(update);
+    }
+  }, {
+    WebSocketImpl,
+    reconnectDelayMs: 25,
+    setIntervalImpl(callback, delay) {
+      intervals.push({ callback, delay, cleared: false });
+      return intervals.length;
+    },
+    clearIntervalImpl(id) {
+      if (intervals[id - 1]) {
+        intervals[id - 1].cleared = true;
+      }
+    },
+    setTimeoutImpl(callback, delay) {
+      retries.push({ callback, delay, cleared: false });
+      return retries.length;
+    },
+    clearTimeoutImpl(id) {
+      if (retries[id - 1]) {
+        retries[id - 1].cleared = true;
+      }
+    }
+  });
+
+  assert.equal(typeof stop, "function");
+  assert.equal(WebSocketImpl.instances.length, 1);
+  assert.equal(WebSocketImpl.instances[0].url, "wss://ws-subscriptions-clob.polymarket.com/ws/market");
+
+  const socket = WebSocketImpl.instances[0];
+  socket.open();
+  assert.equal(opens, 1);
+  assert.deepEqual(JSON.parse(socket.sent[0]), {
+    assets_ids: ["yes-token", "no-token"],
+    type: "market",
+    custom_feature_enabled: true
+  });
+  assert.equal(intervals[0].delay, 10000);
+
+  socket.message({
+    event_type: "book",
+    asset_id: "yes-token",
+    timestamp: "1780086400000",
+    bids: [{ price: "0.31", size: "123" }],
+    asks: [{ price: "0.33", size: "456" }]
+  });
+  assert.deepEqual(books.at(-1), {
+    tokenId: "yes-token",
+    book: {
+      bids: [{ price: 0.31, size: 123 }],
+      asks: [{ price: 0.33, size: 456 }]
+    },
+    timestamp: 1780086400000
+  });
+  assert.deepEqual(prices, [{
+    tokenId: "yes-token",
+    price: 0.32,
+    timestamp: 1780086400000,
+    source: "midpoint"
+  }]);
+
+  socket.message({
+    event_type: "price_change",
+    timestamp: "1780086400500",
+    price_changes: [
+      {
+        asset_id: "yes-token",
+        price: "0.32",
+        size: "25",
+        side: "BUY",
+        best_bid: "0.32",
+        best_ask: "0.34"
+      },
+      {
+        asset_id: "yes-token",
+        price: "0.33",
+        size: "0",
+        side: "SELL",
+        best_bid: "0.32",
+        best_ask: "0.34"
+      }
+    ]
+  });
+  assert.deepEqual(books.at(-1), {
+    tokenId: "yes-token",
+    book: {
+      bids: [
+        { price: 0.32, size: 25 },
+        { price: 0.31, size: 123 }
+      ],
+      asks: []
+    },
+    timestamp: 1780086400500
+  });
+  assert.deepEqual(prices.at(-1), {
+    tokenId: "yes-token",
+    price: 0.33,
+    timestamp: 1780086400500,
+    source: "midpoint"
+  });
+
+  socket.message({
+    event_type: "best_bid_ask",
+    asset_id: "yes-token",
+    best_bid: "0.33",
+    best_ask: "0.34",
+    timestamp: "1780086400550"
+  });
+  assert.deepEqual(prices.at(-1), {
+    tokenId: "yes-token",
+    price: 0.335,
+    timestamp: 1780086400550,
+    source: "midpoint"
+  });
+
+  socket.message({
+    event_type: "last_trade_price",
+    asset_id: "yes-token",
+    price: "0.325",
+    timestamp: "1780086400600"
+  });
+  assert.deepEqual(prices.at(-1), {
+    tokenId: "yes-token",
+    price: 0.325,
+    timestamp: 1780086400600,
+    source: "trade"
+  });
+
+  intervals[0].callback();
+  assert.equal(socket.sent.at(-1), "PING");
+
+  socket.serverClose();
+  assert.equal(closes, 1);
+  assert.equal(intervals[0].cleared, true);
+  assert.equal(retries[0].delay, 25);
+  retries[0].callback();
+  assert.equal(WebSocketImpl.instances.length, 2);
+
+  stop();
+  assert.equal(WebSocketImpl.instances[1].readyState, 3);
+  assert.equal(retries.length, 1);
+});
+
+test("ignores raw Polymarket heartbeat responses", () => {
+  const WebSocketImpl = fakeWebSocketClass();
+  let errors = 0;
+  const stop = polymarket.openTradeStream({
+    clobTokenIds: ["yes-token"]
+  }, {
+    onError() {
+      errors += 1;
+    }
+  }, { WebSocketImpl });
+
+  try {
+    const socket = WebSocketImpl.instances[0];
+    socket.open();
+    socket.rawMessage("PONG");
+    assert.equal(errors, 0);
+  } finally {
+    stop();
+  }
+});
+
+test("surfaces a total CLOB trade-data failure", async () => {
+  const market = polymarket.normalizeMarket({
+    id: "offline-market",
+    question: "Will this venue respond?",
+    outcomes: "[\"Yes\", \"No\"]",
+    outcomePrices: "[\"0.4\", \"0.6\"]",
+    clobTokenIds: "[\"yes-token\", \"no-token\"]",
+    active: true,
+    closed: false
+  });
+
+  await assert.rejects(
+    polymarket.fetchClobTradeData(market, {
+      fetchImpl: async () => {
+        throw new Error("CLOB offline");
+      },
+      timeoutMs: 1000
+    }),
+    /CLOB offline/
+  );
 });
 
 test("parses Up/Down markets and missing movement fields", () => {

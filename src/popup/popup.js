@@ -34,7 +34,7 @@
   const trendingTab = document.getElementById("trending-tab");
   const watchlistTab = document.getElementById("watchlist-tab");
   const renderer = global.PMRender;
-  const tradingView = global.PMTradingView || null;
+  const klineChart = global.PMKLineChart || null;
   const signals = global.PMArticleSignals;
   const polymarket = global.PMPolymarket;
   const hyperliquid = global.PMHyperliquid || null;
@@ -67,6 +67,10 @@
   let heroExpandedHeight = 0;
   let latestSourceTabId = Number.isInteger(sourceTabId) && sourceTabId > 0 ? sourceTabId : null;
   let activeRelatedRunId = 0;
+  let activeTradeHydrationId = 0;
+  let activeTradeStreamId = 0;
+  let activeTradeStreamStop = null;
+  let activeTradeClockInterval = null;
   const sessionPromiseCache = new Map();
   const HERO_COLLAPSE_FALLBACK_HEIGHT = 48;
 
@@ -125,12 +129,6 @@
       recordTiming(label, startedAt, meta, "error", error);
       throw error;
     }
-  }
-
-  function delay(ms) {
-    return new Promise((resolve) => {
-      global.setTimeout(resolve, ms);
-    });
   }
 
   async function settleWithin(label, promise, timeoutMs) {
@@ -359,8 +357,18 @@
 
   function setTradeViewOpen(open, options = {}) {
     const shell = shellElement();
-    if (!open && tradingView && typeof tradingView.unmountAll === "function") {
-      tradingView.unmountAll(resultsRegion);
+    if (open) {
+      document.documentElement.dataset.viewMode = "trade";
+    } else if (expandedMode) {
+      document.documentElement.dataset.viewMode = "expanded";
+    } else {
+      delete document.documentElement.dataset.viewMode;
+    }
+    if (!open) {
+      stopTradeStream();
+    }
+    if (!open && klineChart && typeof klineChart.unmountAll === "function") {
+      klineChart.unmountAll(resultsRegion);
     }
     if (shell) {
       shell.classList.toggle("is-trade-view", open);
@@ -936,6 +944,17 @@
     ].filter(Boolean).join("|").toLowerCase();
   }
 
+  function trustedTradeVenueUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      const host = url.hostname.toLowerCase();
+      const allowedHost = host === "polymarket.com" || host.endsWith(".polymarket.com") || host === "app.hyperliquid.xyz";
+      return url.protocol === "https:" && allowedHost ? url.href : "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
   function allKnownMarketGroups() {
     return [
       ...latestRenderedGroups,
@@ -1090,189 +1109,390 @@
     if (!candidate || !renderer || typeof renderer.renderTradeView !== "function") {
       return;
     }
+    stopTradeStream();
     clearRelatedPagination();
     setMenuOpen(false);
-    latestTradeCandidate = candidate;
+    const loadingCandidate = { ...candidate, tradeDataState: "loading" };
+    latestTradeCandidate = loadingCandidate;
     setTradeViewOpen(true);
-    renderer.renderTradeView(resultsRegion, candidate);
-    mountTradingViewChart(candidate);
+    renderer.renderTradeView(resultsRegion, loadingCandidate);
+    mountKLineChart(loadingCandidate);
     resultsRegion.scrollTop = 0;
     renderStatus("complete", "Trade view", "Review market and order details.");
     const backButton = resultsRegion.querySelector("[data-trade-back]");
     if (backButton && typeof backButton.focus === "function") {
       backButton.focus({ preventScroll: true });
     }
-    hydrateTradeViewData(candidate);
+    hydrateTradeViewData(loadingCandidate);
+  }
+
+  function replaceTradeViewData(candidate, tradeData, state) {
+    const interactionState = currentTradeInteractionState();
+    const cleared = state === "ready" ? {} : {
+      tradeBooksByTokenId: {},
+      tradeBooksByOutcome: {},
+      tradeChartHistoryByTokenId: {},
+      tradeChartHistoryByOutcome: {},
+      tradeBook: null,
+      tradeChartHistory: null
+    };
+    const enriched = {
+      ...candidate,
+      ...cleared,
+      ...(tradeData || {}),
+      tradeDataState: state,
+      tradeDataFetchedAt: state === "ready"
+        ? Number(tradeData && tradeData.tradeDataFetchedAt) || Date.now()
+        : null
+    };
+    latestTradeCandidate = enriched;
+    if (klineChart && typeof klineChart.unmountAll === "function") {
+      klineChart.unmountAll(resultsRegion);
+    }
+    renderer.renderTradeView(resultsRegion, enriched);
+    mountKLineChart(enriched);
+    restoreTradeInteractionState(interactionState);
+    return enriched;
   }
 
   async function hydrateTradeViewData(candidate) {
-    if (!candidate || !polymarket || typeof polymarket.fetchClobTradeData !== "function" || isHyperliquidGroup(candidate) || !global.fetch) {
+    if (!candidate) {
       return;
     }
+    if (activeTradeStreamStop) {
+      setTradeStreamState("refreshing", candidate.tradeDataFetchedAt);
+    }
+    stopTradeStream();
+    const hyperliquidMarket = isHyperliquidGroup(candidate);
+    const venue = hyperliquidMarket ? hyperliquid : polymarket;
+    const fetchTradeData = hyperliquidMarket
+      ? venue && venue.fetchTradeData
+      : venue && venue.fetchClobTradeData;
     const key = marketKey(candidate);
+    const hydrationId = ++activeTradeHydrationId;
+    if (typeof fetchTradeData !== "function") {
+      if (latestTradeCandidate && marketKey(latestTradeCandidate) === key) {
+        const enriched = replaceTradeViewData(candidate, null, "unavailable");
+        startTradeStream(enriched);
+      }
+      return;
+    }
+    if (!global.fetch) {
+      startTradeStream(candidate);
+      return;
+    }
     try {
-      const tradeData = await polymarket.fetchClobTradeData(candidate, {
+      const tradeData = await fetchTradeData(candidate, {
         fetchImpl: global.fetch.bind(global),
         timeoutMs: 6500
       });
-      if (!tradeData || !latestTradeCandidate || marketKey(latestTradeCandidate) !== key || !resultsRegion.querySelector(".trade-view")) {
+      if (hydrationId !== activeTradeHydrationId || !latestTradeCandidate || marketKey(latestTradeCandidate) !== key || !resultsRegion.querySelector(".trade-view")) {
         return;
       }
-      const enriched = {
-        ...candidate,
-        ...tradeData
-      };
-      const interactionState = currentTradeInteractionState();
-      latestTradeCandidate = enriched;
-      if (tradingView && typeof tradingView.unmountAll === "function") {
-        tradingView.unmountAll(resultsRegion);
-      }
-      renderer.renderTradeView(resultsRegion, enriched);
-      restoreTradeInteractionState(interactionState);
-      mountTradingViewChart(enriched);
-      renderStatus("complete", "Trade view", tradeData.tradeDataSource === "clob" ? "Live depth loaded." : "Review market and order details.");
+      const enriched = replaceTradeViewData(candidate, tradeData, tradeData ? "ready" : "unavailable");
+      startTradeStream(enriched);
+      renderStatus("complete", "Trade view", tradeData ? "Live venue data loaded." : "Venue data unavailable.");
     } catch (error) {
-      warnNonFatal("Polymarket trade data query failed; keeping preview trade data.", error);
+      if (hydrationId === activeTradeHydrationId && latestTradeCandidate && marketKey(latestTradeCandidate) === key && resultsRegion.querySelector(".trade-view")) {
+        const enriched = replaceTradeViewData(candidate, null, "error");
+        startTradeStream(enriched);
+        renderStatus("error", "Trade view", "Could not load live venue data.");
+      }
+      warnNonFatal("Trade data query failed.", error);
+    }
+  }
+
+  function stopTradeClock() {
+    if (activeTradeClockInterval !== null) {
+      global.clearInterval(activeTradeClockInterval);
+      activeTradeClockInterval = null;
+    }
+  }
+
+  function refreshTradeClock() {
+    const chartState = resultsRegion.querySelector(".trade-chart-stream-state");
+    const book = resultsRegion.querySelector(".trade-order-book");
+    if (book && book.dataset.tradeStreamState === "live") {
+      setTradeStreamState("live");
+    } else if (chartState && chartState.dataset.tradeStreamState === "live") {
+      setTradeChartStreamState("live");
+    } else {
+      stopTradeClock();
+    }
+  }
+
+  function startTradeClock() {
+    if (activeTradeClockInterval === null) {
+      activeTradeClockInterval = global.setInterval(refreshTradeClock, 1000);
+    }
+  }
+
+  function stopTradeStream() {
+    stopTradeClock();
+    activeTradeStreamId += 1;
+    const stop = activeTradeStreamStop;
+    activeTradeStreamStop = null;
+    if (typeof stop === "function") {
+      try {
+        stop();
+      } catch (error) {
+        warnNonFatal("Trade stream teardown failed.", error);
+      }
+    }
+  }
+
+  function tradeStreamTimestamp(value) {
+    const timestamp = Number(value);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      return "";
+    }
+    const date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp);
+    return Number.isFinite(date.getTime()) ? `${date.toISOString().slice(11, 19)} UTC` : "";
+  }
+
+  function tradeStreamVenueName(candidate = {}) {
+    return isHyperliquidGroup(candidate) ? "Hyperliquid" : "Polymarket";
+  }
+
+  function setTradeChartStreamState(stateName, timestamp) {
+    const state = resultsRegion.querySelector(".trade-chart-stream-state");
+    if (!state || !latestTradeCandidate) {
+      return;
+    }
+    const time = tradeStreamTimestamp(stateName === "live" ? Date.now() : timestamp);
+    const venueName = tradeStreamVenueName(latestTradeCandidate);
+    state.textContent = stateName === "live"
+      ? `Live ${venueName} quote${time ? ` · ${time}` : ""}`
+      : stateName === "reconnecting"
+        ? `Reconnecting chart…${time ? ` Last quote ${time}` : ""}`
+        : stateName === "refreshing"
+          ? "Refreshing live chart…"
+          : `Connected to ${venueName} · waiting for quote…`;
+    state.dataset.tradeStreamState = stateName;
+    state.classList.toggle("is-live", stateName === "live");
+    if (stateName === "live") {
+      startTradeClock();
+    } else {
+      stopTradeClock();
+    }
+  }
+
+  function setTradeStreamState(stateName, timestamp) {
+    setTradeChartStreamState(stateName, timestamp);
+    const book = resultsRegion.querySelector(".trade-order-book");
+    const state = book && book.querySelector(".trade-book-state");
+    if (!book || !state || !latestTradeCandidate) {
+      return;
+    }
+    const time = tradeStreamTimestamp(stateName === "live" ? Date.now() : timestamp);
+    const venueName = tradeStreamVenueName(latestTradeCandidate);
+    const text = stateName === "live"
+      ? `Streaming ${venueName} depth${time ? ` · ${time}` : ""}`
+      : stateName === "reconnecting"
+        ? `Reconnecting live stream…${time ? ` Last update ${time}` : ""}`
+        : stateName === "refreshing"
+          ? "Refreshing venue snapshot…"
+          : `Connected to ${venueName} · waiting for live update…`;
+    book.dataset.tradeStreamState = stateName;
+    book.dataset.tradeDataState = stateName;
+    state.textContent = text;
+    state.dataset.readyText = text;
+    state.classList.toggle("is-live", stateName === "live");
+  }
+
+  function streamOutcomeKeys(update = {}) {
+    return (Array.isArray(update.outcomeKeys) ? update.outcomeKeys : [])
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  function streamOutcomes(candidate = {}, update = {}) {
+    const tokenId = String(update.tokenId || "").trim();
+    const outcomes = Array.isArray(candidate.outcomeOptions) ? candidate.outcomeOptions : [];
+    if (tokenId) {
+      const match = outcomes.find((outcome) => String(outcome && (outcome.clobTokenId || outcome.tokenId || outcome.assetId) || "").trim() === tokenId);
+      return [match || { clobTokenId: tokenId }];
+    }
+    return streamOutcomeKeys(update).map((key) => {
+      const match = outcomes.find((outcome) => String(outcome && outcome.label || "").trim().toLowerCase() === key);
+      return match || { label: `${key.slice(0, 1).toUpperCase()}${key.slice(1)}` };
+    });
+  }
+
+  function buttonMatchesStreamUpdate(button, update = {}) {
+    if (!button || !button.dataset) {
+      return false;
+    }
+    const tokenId = String(update.tokenId || "").trim();
+    if (tokenId) {
+      return button.dataset.tradeTokenId === tokenId;
+    }
+    return streamOutcomeKeys(update).includes(String(button.dataset.tradeLabel || "").trim().toLowerCase());
+  }
+
+  function applyTradeStreamBook(update = {}) {
+    if (!latestTradeCandidate || !update.book) {
+      return;
+    }
+    const tokenId = String(update.tokenId || "").trim();
+    if (tokenId) {
+      latestTradeCandidate.tradeBooksByTokenId = latestTradeCandidate.tradeBooksByTokenId || {};
+      latestTradeCandidate.tradeBooksByTokenId[tokenId] = update.book;
+    }
+    const outcomeKeys = streamOutcomeKeys(update);
+    if (outcomeKeys.length) {
+      latestTradeCandidate.tradeBooksByOutcome = latestTradeCandidate.tradeBooksByOutcome || {};
+      for (const key of outcomeKeys) {
+        latestTradeCandidate.tradeBooksByOutcome[key] = update.book;
+      }
+    }
+    latestTradeCandidate.tradeDataFetchedAt = Number(update.timestamp) || Date.now();
+
+    for (const button of resultsRegion.querySelectorAll(".trade-side-button")) {
+      if (!buttonMatchesStreamUpdate(button, update)) {
+        continue;
+      }
+      const bidRows = typeof renderer.orderRowsForBook === "function"
+        ? renderer.orderRowsForBook(update.book, "bid") || []
+        : [];
+      const askRows = typeof renderer.orderRowsForBook === "function"
+        ? renderer.orderRowsForBook(update.book, "ask") || []
+        : [];
+      button.dataset.tradeBookBidRows = JSON.stringify(bidRows);
+      button.dataset.tradeBookAskRows = JSON.stringify(askRows);
+    }
+    updateTradeOrderBook(resultsRegion.querySelector(".trade-side-button.is-active"));
+    setTradeStreamState("live", update.timestamp);
+  }
+
+  function applyTradeStreamPrice(update = {}) {
+    if (!latestTradeCandidate) {
+      return;
+    }
+    const price = Number(update.price);
+    const timestamp = Number(update.timestamp) || Date.now();
+    if (!Number.isFinite(price) || price <= 0) {
+      return;
+    }
+    setTradeChartStreamState("live", timestamp);
+    if (klineChart && typeof klineChart.appendLivePoint === "function") {
+      for (const outcome of streamOutcomes(latestTradeCandidate, update)) {
+        try {
+          klineChart.appendLivePoint(resultsRegion, latestTradeCandidate, outcome, {
+            t: timestamp,
+            p: price
+          });
+        } catch (error) {
+          warnNonFatal("Live chart update failed.", error);
+        }
+      }
+    }
+  }
+
+  function startTradeStream(candidate) {
+    stopTradeStream();
+    if (!candidate || !resultsRegion.querySelector(".trade-view")) {
+      return;
+    }
+    const venue = isHyperliquidGroup(candidate) ? hyperliquid : polymarket;
+    if (!venue || typeof venue.openTradeStream !== "function") {
+      return;
+    }
+    const streamId = activeTradeStreamId;
+    const key = marketKey(candidate);
+    const isCurrent = () => activeTradeStreamId === streamId &&
+      latestTradeCandidate &&
+      marketKey(latestTradeCandidate) === key &&
+      Boolean(resultsRegion.querySelector(".trade-view"));
+    try {
+      const stop = venue.openTradeStream(candidate, {
+        onOpen() {
+          if (isCurrent()) {
+            setTradeStreamState("connecting");
+          }
+        },
+        onBook(update) {
+          if (isCurrent()) {
+            applyTradeStreamBook(update);
+          }
+        },
+        onPrice(update) {
+          if (isCurrent()) {
+            applyTradeStreamPrice(update);
+          }
+        },
+        onClose() {
+          if (isCurrent()) {
+            setTradeStreamState("reconnecting", latestTradeCandidate.tradeDataFetchedAt);
+          }
+        },
+        onError() {
+          // The venue adapter reconnects after socket or parse failures.
+        }
+      });
+      if (isCurrent() && typeof stop === "function") {
+        activeTradeStreamStop = stop;
+      } else if (typeof stop === "function") {
+        stop();
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        setTradeStreamState("reconnecting", candidate.tradeDataFetchedAt);
+      }
+      warnNonFatal("Trade stream failed to start.", error);
     }
   }
 
   function currentTradeInteractionState() {
     const activeRange = resultsRegion.querySelector(".trade-range-button.is-active");
     const activeSide = resultsRegion.querySelector(".trade-side-button.is-active");
-    const amountInput = resultsRegion.querySelector("[data-trade-amount]");
     return {
       range: activeRange && activeRange.dataset ? activeRange.dataset.tradeRange || "" : "",
       side: activeSide && activeSide.dataset ? activeSide.dataset.tradeSide || "" : "",
-      amount: amountInput ? amountInput.value : "",
       actionsOpen: Boolean(resultsRegion.querySelector("[data-trade-actions]:not([hidden])"))
     };
   }
 
-  function mountTradingViewChart(candidate) {
-    if (!tradingView || typeof tradingView.mountTradeChart !== "function") {
+  function mountKLineChart(candidate) {
+    if (!klineChart || typeof klineChart.mountTradeChart !== "function") {
       return;
     }
     const rangeButton = resultsRegion.querySelector(".trade-range-button.is-active");
-    tradingView.mountTradeChart(resultsRegion, candidate, {
-      range: rangeButton && rangeButton.dataset ? rangeButton.dataset.tradeRange : "1M"
-    }).catch((error) => {
-      warnNonFatal("TradingView chart failed to mount; keeping fallback chart.", error);
-    });
+    const sideButton = resultsRegion.querySelector(".trade-side-button.is-active");
+    const outcome = sideButton ? {
+      label: sideButton.dataset.tradeLabel || sideButton.textContent.trim(),
+      clobTokenId: sideButton.dataset.tradeTokenId || ""
+    } : undefined;
+    try {
+      klineChart.mountTradeChart(resultsRegion, candidate, {
+        range: rangeButton && rangeButton.dataset ? rangeButton.dataset.tradeRange : "1M",
+        outcome
+      });
+    } catch (error) {
+      warnNonFatal("K-line chart failed to mount.", error);
+    }
   }
 
   function restoreTradeInteractionState(state = {}) {
     if (state.range) {
       const rangeButton = resultsRegion.querySelector(`[data-trade-range='${state.range}']`);
-      if (rangeButton) {
+      if (rangeButton && !rangeButton.classList.contains("is-active")) {
         selectTradeRange(rangeButton);
       }
     }
     if (state.side) {
       const sideButton = resultsRegion.querySelector(`[data-trade-side='${state.side}']`);
-      if (sideButton) {
+      if (sideButton && !sideButton.classList.contains("is-active")) {
         selectTradeSide(sideButton);
       }
     }
-    if (state.amount) {
-      const amountInput = resultsRegion.querySelector("[data-trade-amount]");
-      if (amountInput) {
-        amountInput.value = state.amount;
-      }
-      updateTradeTicket();
-    }
     setTradeActionsOpen(Boolean(state.actionsOpen));
-  }
-
-  function parseTradeAmount(value) {
-    const numeric = Number(String(value || "").replace(/[^0-9.]/g, ""));
-    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
-  }
-
-  function updateTradeTicket() {
-    const activeSide = resultsRegion.querySelector(".trade-side-button.is-active");
-    const input = resultsRegion.querySelector("[data-trade-amount]");
-    const buyButton = resultsRegion.querySelector("[data-trade-buy]");
-    const estimate = resultsRegion.querySelector("[data-trade-estimate]");
-    if (!activeSide || !input || !buyButton || !estimate) {
-      return;
-    }
-    const label = activeSide.dataset.tradeLabel || activeSide.textContent.trim().split(/\s+/)[0] || "Yes";
-    const unit = activeSide.dataset.tradeUnit || "shares";
-    const price = Number(activeSide.dataset.tradePrice);
-    const amount = parseTradeAmount(input.value);
-    buyButton.textContent = `Buy ${label}`;
-    estimate.textContent = Number.isFinite(price) && price > 0
-      ? `Est. ${unit}: ${(amount / price).toLocaleString("en-US", { maximumFractionDigits: amount / price >= 1000 ? 0 : 1 })}`
-      : `Est. ${unit}: 0`;
-  }
-
-  function currentTradePreviewDetail() {
-    const activeSide = resultsRegion.querySelector(".trade-side-button.is-active");
-    const input = resultsRegion.querySelector("[data-trade-amount]");
-    const estimate = resultsRegion.querySelector("[data-trade-estimate]");
-    const label = activeSide
-      ? activeSide.dataset.tradeLabel || activeSide.textContent.trim().split(/\s+/)[0] || "Market"
-      : "Market";
-    const amount = input && input.value ? input.value : "$0";
-    const estimateText = estimate ? estimate.textContent.trim() : "";
-    return [label, amount, estimateText].filter(Boolean).join(" - ");
-  }
-
-  function formatTradeBookPrice(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-      return "n/a";
-    }
-    if (numeric >= 1000) {
-      return `$${Math.round(numeric).toLocaleString("en-US")}`;
-    }
-    if (numeric >= 1) {
-      return `$${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-    return `${Math.round(numeric * 100)}\u00a2`;
-  }
-
-  function tradeBookRows(price, side) {
-    const numericPrice = Number(price);
-    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
-      return Array.from({ length: 5 }, () => ({
-        price: "n/a",
-        shares: "n/a",
-        total: "n/a"
-      }));
-    }
-    if (Number.isFinite(numericPrice) && numericPrice > 1) {
-      const step = numericPrice >= 1000 ? Math.max(1, Math.round(numericPrice * 0.0005)) : numericPrice >= 10 ? 0.05 : 0.01;
-      return Array.from({ length: 5 }, (_item, index) => {
-        const level = side === "bid"
-          ? Math.max(step, numericPrice - step * (index + 1))
-          : numericPrice + step * (index + 1);
-        const shares = 11200 + (Math.round(numericPrice) * 3) + (index * 2810) + (side === "ask" ? 980 : 0);
-        return {
-          price: formatTradeBookPrice(level),
-          shares,
-          total: shares + index * 15460
-        };
-      });
-    }
-    const center = Math.round(Math.max(0.01, Math.min(0.99, numericPrice || 0.5)) * 100);
-    return Array.from({ length: 5 }, (_item, index) => {
-      const cent = side === "bid"
-        ? Math.max(1, center - index - 1)
-        : Math.min(99, center + index + 1);
-      const shares = 11200 + (center * 41) + (index * 2810) + (side === "ask" ? 980 : 0);
-      return {
-        price: `${cent}\u00a2`,
-        shares,
-        total: shares + index * 15460
-      };
-    });
   }
 
   function formatTradeBookCell(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric)
-      ? numeric.toLocaleString("en-US")
+      ? numeric.toLocaleString("en-US", { maximumFractionDigits: 8 })
       : String(value || "n/a");
   }
 
@@ -1288,33 +1508,56 @@
     }
     try {
       const rows = JSON.parse(raw);
-      return Array.isArray(rows) && rows.length ? rows : null;
+      return Array.isArray(rows) ? rows : null;
     } catch (error) {
       return null;
     }
   }
 
-  function updateTradeOrderBook(price, sideButton = null) {
+  function updateTradeOrderBook(sideButton = null) {
+    const book = resultsRegion.querySelector(".trade-order-book");
+    const state = book && book.querySelector(".trade-book-state");
+    let hasRows = false;
     for (const rows of resultsRegion.querySelectorAll("[data-trade-book-side]")) {
       const side = rows.dataset.tradeBookSide;
-      const rowData = tradeBookRowsFromButton(sideButton, side) || tradeBookRows(price, side);
+      const rowData = tradeBookRowsFromButton(sideButton, side) || [];
+      const existingRows = Array.from(rows.children);
       const maxShares = Math.max(1, ...rowData.map((row) => Number(row.shares)).filter((value) => Number.isFinite(value) && value > 0));
-      for (const [index, line] of Array.from(rows.querySelectorAll(".trade-book-row")).entries()) {
-        const row = rowData[index];
-        if (!row) {
-          continue;
+      for (const [index, row] of rowData.entries()) {
+        hasRows = true;
+        let line = existingRows[index];
+        if (!line) {
+          line = document.createElement("div");
+          line.className = "trade-book-row";
+          for (let cellIndex = 0; cellIndex < 3; cellIndex += 1) {
+            line.append(document.createElement("span"));
+          }
+          rows.append(line);
         }
         const shares = Number(row.shares);
         const depth = Number.isFinite(shares) && shares > 0
           ? Math.max(22, Math.round((shares / maxShares) * 100))
           : 0;
         line.style.setProperty("--depth", `${depth}%`);
-        const cells = line.querySelectorAll("span");
         const values = [row.price, formatTradeBookCell(row.shares), formatTradeBookCell(row.total)];
-        for (const [cellIndex, cell] of Array.from(cells).entries()) {
-          cell.textContent = values[cellIndex] || "";
+        const cells = line.querySelectorAll("span");
+        for (const [cellIndex, value] of values.entries()) {
+          cells[cellIndex].textContent = value || "";
         }
       }
+      for (const staleRow of existingRows.slice(rowData.length)) {
+        staleRow.remove();
+      }
+    }
+    if (book) {
+      const streamState = book.dataset.tradeStreamState;
+      book.dataset.tradeDataState = hasRows && ["live", "connecting", "reconnecting"].includes(streamState)
+        ? streamState
+        : hasRows ? "ready" : "unavailable";
+    }
+    if (state) {
+      state.textContent = hasRows ? state.dataset.readyText || "Live depth" : "Depth unavailable.";
+      state.classList.toggle("is-live", hasRows && book && book.dataset.tradeStreamState === "live");
     }
   }
 
@@ -1324,11 +1567,10 @@
       side.classList.toggle("is-active", active);
       side.setAttribute("aria-pressed", String(active));
     }
-    const price = Number(button.dataset.tradePrice);
-    if (Number.isFinite(price)) {
-      updateTradeOrderBook(price, button);
+    updateTradeOrderBook(button);
+    if (latestTradeCandidate) {
+      mountKLineChart(latestTradeCandidate);
     }
-    updateTradeTicket();
   }
 
   function selectTradeRange(button) {
@@ -1337,43 +1579,8 @@
       range.classList.toggle("is-active", active);
       range.setAttribute("aria-pressed", String(active));
     }
-    const path = button.dataset.chartPath;
-    const markerX = Number(button.dataset.chartMarkerX);
-    const markerY = Number(button.dataset.chartMarkerY);
-    const line = resultsRegion.querySelector(".trade-chart-line");
-    const markerLine = resultsRegion.querySelector(".trade-chart-marker-line");
-    const markerDot = resultsRegion.querySelector(".trade-chart-marker-dot");
-    const priceLabel = resultsRegion.querySelector(".trade-chart-price");
-    const dateLabel = resultsRegion.querySelector(".trade-chart-date");
-    if (line && path) {
-      line.setAttribute("d", path);
-    }
-    if (Number.isFinite(markerX) && Number.isFinite(markerY)) {
-      if (markerLine) {
-        markerLine.setAttribute("x1", String(markerX));
-        markerLine.setAttribute("x2", String(markerX));
-        markerLine.setAttribute("y1", String(markerY));
-      }
-      if (markerDot) {
-        markerDot.setAttribute("cx", String(markerX));
-        markerDot.setAttribute("cy", String(markerY));
-      }
-      if (priceLabel) {
-        priceLabel.style.left = `${(markerX / 420) * 100}%`;
-        priceLabel.style.top = `${Math.max(10, markerY - 56)}px`;
-      }
-      if (dateLabel) {
-        dateLabel.style.left = `${(markerX / 420) * 100}%`;
-      }
-    }
-    if (priceLabel && button.dataset.chartPrice) {
-      priceLabel.textContent = button.dataset.chartPrice;
-    }
-    if (dateLabel && button.dataset.chartDate) {
-      dateLabel.textContent = button.dataset.chartDate;
-    }
-    if (tradingView && typeof tradingView.setRange === "function") {
-      tradingView.setRange(resultsRegion, button.dataset.tradeRange || "1M");
+    if (klineChart && typeof klineChart.setRange === "function") {
+      klineChart.setRange(resultsRegion, button.dataset.tradeRange || "1M");
     }
   }
 
@@ -1580,35 +1787,6 @@
 
   function queueRelatedLightUpdates(runId, article, state) {
     queueTraderEnrichment(runId, article, state);
-  }
-
-  async function searchRelatedGroups(article) {
-    const primary = await searchPolymarketRelatedStage(article, "polymarket-primary", {
-      minConfidence: MIN_CONFIDENCE,
-      includeTagExpansion: false
-    });
-    let resultGroups = primary.resultGroups;
-    let mergedCandidates = primary.candidates;
-
-    if (resultGroups.length < MAX_RELATED_RESULT_GROUPS && MAYBE_MIN_CONFIDENCE < MIN_CONFIDENCE) {
-      try {
-        const filler = await searchPolymarketRelatedStage(article, "polymarket-secondary", {
-          minConfidence: MAYBE_MIN_CONFIDENCE,
-          includeMaybe: true,
-          includeTagExpansion: true
-        });
-        resultGroups = mergeGroups(resultGroups, filler.resultGroups, MAX_RELATED_RESULT_GROUPS);
-        mergedCandidates = mergeGroups(mergedCandidates, filler.candidates, MAX_RELATED_RANKED_MARKETS);
-      } catch (error) {
-        warnNonFatal("Secondary related-market query failed; keeping the primary results only.", error);
-      }
-    }
-
-    const venue = await searchHyperliquidRelatedGroups(article, MAX_RELATED_RESULT_GROUPS);
-    return {
-      candidates: mergeGroups(mergedCandidates, venue.candidates, MAX_RELATED_RANKED_MARKETS),
-      resultGroups: mergeGroups(resultGroups, venue.resultGroups, MAX_RELATED_RESULT_GROUPS + 2)
-    };
   }
 
   async function run() {
@@ -1906,20 +2084,21 @@
       event.preventDefault();
       const action = tradeAction.dataset.tradeAction;
       setTradeActionsOpen(false);
-      if (action === "settings") {
-        showSurfaceMessage("Settings", "Read-only matching is active. Date rows open the trading view.", { timeoutMs: 3000 });
-        renderStatus("complete", "Settings", "Read-only matching is active.");
+      if (action === "refresh") {
+        if (latestTradeCandidate) {
+          renderStatus("loading", "Refreshing market data", "Loading the latest venue snapshot.");
+          hydrateTradeViewData(latestTradeCandidate);
+        }
         return;
       }
-      if (action === "connect") {
-        showSurfaceMessage("Connecting", "Refreshing matches from the active tab.", { timeoutMs: 3000 });
-        run();
-        return;
-      }
-      if (action === "info") {
-        const hasLiveData = latestTradeCandidate && latestTradeCandidate.tradeDataSource === "clob";
-        showSurfaceMessage("Information", hasLiveData ? "Prices and depth are loaded from the matched venue when available." : "Prices and depth use a local preview until venue data loads.", { timeoutMs: 3000 });
-        renderStatus("complete", "Information", hasLiveData ? "Live market depth is loaded." : "Preview values are calculated locally.");
+      if (action === "open-venue") {
+        const view = resultsRegion.querySelector(".trade-view");
+        const venueUrl = trustedTradeVenueUrl(view && view.dataset ? view.dataset.marketUrl : "");
+        if (venueUrl && typeof chrome !== "undefined" && chrome.tabs && typeof chrome.tabs.create === "function") {
+          chrome.tabs.create({ url: venueUrl });
+        } else {
+          showSurfaceMessage("Venue unavailable", "Could not open this venue safely.", { timeoutMs: 3000 });
+        }
       }
       return;
     }
@@ -1935,26 +2114,6 @@
     if (sideButton) {
       event.preventDefault();
       selectTradeSide(sideButton);
-      return;
-    }
-
-    const maxButton = event.target.closest("[data-trade-max]");
-    if (maxButton) {
-      event.preventDefault();
-      const input = resultsRegion.querySelector("[data-trade-amount]");
-      if (input) {
-        input.value = "$1,000";
-      }
-      updateTradeTicket();
-      return;
-    }
-
-    const buyButton = event.target.closest("[data-trade-buy]");
-    if (buyButton) {
-      event.preventDefault();
-      const detail = currentTradePreviewDetail();
-      showSurfaceMessage("Trade preview", `${detail}. Connect on the venue to place the live order.`, { timeoutMs: 3000 });
-      renderStatus("complete", "Trade preview", detail || "Order details calculated locally.");
       return;
     }
 
@@ -2045,12 +2204,6 @@
       toggleMarketCardExpansion(marketCard);
     }
   });
-  resultsRegion.addEventListener("input", (event) => {
-    if (!event.target.closest("[data-trade-amount]")) {
-      return;
-    }
-    updateTradeTicket();
-  });
   if (settingsButton) {
     settingsButton.addEventListener("click", () => {
       setMenuOpen(false, { focusButton: true });
@@ -2068,8 +2221,9 @@
   if (privacyInfoButton) {
     privacyInfoButton.addEventListener("click", () => {
       setMenuOpen(false, { focusButton: true });
-      showSurfaceMessage("Information", "Read only. Matched locally. No data leaves device.");
-      renderStatus("complete", "Read only", "Matched locally. No data leaves device.");
+      const detail = "Article text stays on this device. The article title and derived search terms go to Polymarket; market-data requests go to Polymarket and Hyperliquid.";
+      showSurfaceMessage("Data use", detail);
+      renderStatus("complete", "Data use", detail);
     });
   }
   if (actionMenu) {
@@ -2099,6 +2253,7 @@
   }
   if (typeof global.addEventListener === "function") {
     global.addEventListener("resize", resetHeaderCollapseMetrics);
+    global.addEventListener("pagehide", stopTradeStream);
   }
   document.addEventListener("click", (event) => {
     if (event.target && event.target.closest && !event.target.closest("[data-trade-menu], [data-trade-actions]")) {

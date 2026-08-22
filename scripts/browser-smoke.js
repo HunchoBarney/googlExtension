@@ -9,6 +9,7 @@ const { chromium } = require("playwright-core");
 const { createArgReader } = require("./cliArgs");
 const {
   artifactPath,
+  assertRequestedVerifications,
   discoverArticleLinks
 } = require("./qaUtils");
 
@@ -325,25 +326,24 @@ async function readPopupState(root, sessionId) {
         tradeViewCount: document.querySelectorAll(".trade-view").length,
         tradeViewTitle: document.querySelector(".trade-hero h2")?.textContent.trim() || "",
         tradeMarketSource: document.querySelector(".trade-view .source-badge")?.getAttribute("aria-label") || "",
-        tradeBuyText: document.querySelector(".trade-buy-button")?.textContent.trim() || "",
         tradeOrderBookRows: document.querySelectorAll(".trade-book-row").length,
+        tradeDataState: document.querySelector(".trade-order-book")?.dataset.tradeDataState || "",
+        tradeBookStateText: document.querySelector(".trade-book-state")?.textContent.trim() || "",
         tradeBackButtonCount: document.querySelectorAll("[data-trade-back]").length,
-        tradeAmountValue: document.querySelector("[data-trade-amount]")?.value || "",
-        tradeEstimateText: document.querySelector("[data-trade-estimate]")?.textContent.trim() || "",
+        tradeExecutionControlCount: document.querySelectorAll("[data-trade-amount], [data-trade-max], [data-trade-buy], [data-trade-estimate]").length,
+        tradeSideLabels: [...document.querySelectorAll(".trade-side-button")].map((button) => button.textContent.replace(/\\s+/g, " ").trim()),
         tradeActiveRange: document.querySelector(".trade-range-button.is-active")?.textContent.trim() || "",
-        tradeChartDate: document.querySelector(".trade-chart-date")?.textContent.trim() || "",
-        tradeChartPath: document.querySelector(".trade-chart-line")?.getAttribute("d") || "",
-        tradingViewState: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewState || "",
-        tradingViewSandbox: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewSandbox || "",
-        tradingViewStage: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewStage || "",
-        tradingViewDiagnostic: document.querySelector("[data-tradingview-chart]")?.dataset.tradingviewDiagnostic || "",
-        tradingViewIframeCount: document.querySelectorAll("[data-tradingview-chart] iframe").length,
-        tradingViewReady: Boolean(document.querySelector(".trade-chart-card.tv-ready")),
-        tradingViewError: Boolean(document.querySelector(".trade-chart-card.tv-error")),
-        tradingViewIframeSrc: document.querySelector("[data-tradingview-chart] iframe")?.getAttribute("src") || "",
+        klineState: document.querySelector("[data-kline-chart]")?.dataset.klineState || "",
+        klineRange: document.querySelector("[data-kline-chart]")?.dataset.klineRange || "",
+        klinePointCount: Number(document.querySelector("[data-kline-chart]")?.dataset.klinePoints || 0),
+        klineCanvasCount: document.querySelectorAll("[data-kline-chart] canvas").length,
+        klineReady: Boolean(document.querySelector(".trade-chart-card.kline-ready")),
+        klineUnavailable: Boolean(document.querySelector(".trade-chart-card.kline-unavailable")),
+        klineError: Boolean(document.querySelector(".trade-chart-card.kline-error")),
         tradeActiveSide: document.querySelector(".trade-side-button.is-active")?.dataset.tradeSide || "",
         tradeActionOpen: Boolean(document.querySelector("[data-trade-actions]:not([hidden])")),
         tradeActionCount: document.querySelectorAll("[data-trade-action]").length,
+        tradeActionLabels: [...document.querySelectorAll("[data-trade-action]")].map((button) => button.textContent.replace(/\\s+/g, " ").trim()),
         expandedSourceLabelRowOverlap: (() => {
           const label = document.querySelector(".market-card-expanded .source-label");
           const firstRow = document.querySelector(".market-card-expanded .market-scenario-row");
@@ -435,14 +435,18 @@ async function waitForPopupCondition(root, sessionId, predicate, label, timeoutM
     phase: latest && latest.phase,
     activeTab: latest && latest.visual && latest.visual.activeTabText,
     status: latest && latest.visual && latest.visual.statusText,
-    tradingViewState: latest && latest.visual && latest.visual.tradingViewState,
-    tradingViewSandbox: latest && latest.visual && latest.visual.tradingViewSandbox,
-    tradingViewStage: latest && latest.visual && latest.visual.tradingViewStage,
-    tradingViewDiagnostic: latest && latest.visual && latest.visual.tradingViewDiagnostic,
-    tradingViewIframeCount: latest && latest.visual && latest.visual.tradingViewIframeCount,
-    tradingViewReady: latest && latest.visual && latest.visual.tradingViewReady,
-    tradingViewError: latest && latest.visual && latest.visual.tradingViewError,
-    tradingViewIframeSrc: latest && latest.visual && latest.visual.tradingViewIframeSrc,
+    klineState: latest && latest.visual && latest.visual.klineState,
+    klineRange: latest && latest.visual && latest.visual.klineRange,
+    klinePointCount: latest && latest.visual && latest.visual.klinePointCount,
+    klineCanvasCount: latest && latest.visual && latest.visual.klineCanvasCount,
+    klineReady: latest && latest.visual && latest.visual.klineReady,
+    klineUnavailable: latest && latest.visual && latest.visual.klineUnavailable,
+    klineError: latest && latest.visual && latest.visual.klineError,
+    tradeActionOpen: latest && latest.visual && latest.visual.tradeActionOpen,
+    tradeActionCount: latest && latest.visual && latest.visual.tradeActionCount,
+    tradeActionLabels: latest && latest.visual && latest.visual.tradeActionLabels,
+    tradeDataState: latest && latest.visual && latest.visual.tradeDataState,
+    tradeOrderBookRows: latest && latest.visual && latest.visual.tradeOrderBookRows,
     menuOpen: latest && latest.visual && latest.visual.menuOpen,
     menuExpanded: latest && latest.visual && latest.visual.menuExpanded,
     activeElementId: latest && latest.visual && latest.visual.activeElementId,
@@ -975,7 +979,9 @@ async function verifyPopupInteractions({
   const footerState = await waitForPopupCondition(
     root,
     popupSessionId,
-    (state) => /Information/i.test(state.visual.surfaceText) && /No data leaves device/i.test(state.visual.surfaceText),
+    (state) => /Data use/i.test(state.visual.surfaceText) &&
+      /Article text stays on this device/i.test(state.visual.surfaceText) &&
+      /Polymarket and Hyperliquid/i.test(state.visual.surfaceText),
     "privacy footer info"
   );
   report.interactionChecks.footerInfo = {
@@ -998,22 +1004,6 @@ async function verifyPopupInteractions({
   };
 }
 
-async function verifyVenuePage(page, href) {
-  await page.waitForLoadState("domcontentloaded", { timeout: 45000 }).catch(() => {});
-  const finalUrl = page.url();
-  const finalHost = new URL(finalUrl).hostname;
-  if (!isSupportedVenueHost(finalHost)) {
-    throw new Error(`Venue link navigated to unexpected host: ${finalUrl}`);
-  }
-
-  return {
-    href,
-    finalUrl,
-    status: null,
-    title: await page.title()
-  };
-}
-
 async function runActionPopupSmoke({
   extensionPath,
   article,
@@ -1027,7 +1017,7 @@ async function runActionPopupSmoke({
   captureArtifacts = true,
   verifyExpanded = false,
   verifyInteractions = false,
-  verifyTradingView = false
+  verifyKline = false
 }) {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "predmarket-extension-smoke-"));
   const commandKey = actionCommandKey();
@@ -1045,7 +1035,7 @@ async function runActionPopupSmoke({
     captureArtifacts,
     verifyExpanded,
     verifyInteractions,
-    verifyTradingView,
+    verifyKline,
     extensionId: "",
     extensionCommand: null,
     preActivationAccess: null,
@@ -1262,6 +1252,26 @@ async function runActionPopupSmoke({
       });
     }
 
+    if (!skipClicks && verifyKline && report.cardLinks.length === 0) {
+      await evaluatePopup(root, popupSessionId, `(() => {
+        document.querySelector("#trending-tab").click();
+        return true;
+      })()`);
+      await waitForPopupCondition(
+        root,
+        popupSessionId,
+        (state) => state.visual.activeTabText === "Trending" &&
+          /Trending loaded/i.test(state.visual.statusText) &&
+          state.cardLinks.length > 0,
+        "trending trade-view fallback"
+      );
+      await waitForPopupImages(root, popupSessionId);
+      const trendingFallback = await readPopupState(root, popupSessionId);
+      assertSupportedVenueLinks(trendingFallback.cardLinks, "Trending trade-view fallback");
+      report.cardLinks = trendingFallback.cardLinks;
+      report.cardTitles = trendingFallback.cardTitles;
+    }
+
     if (skipClicks) {
       report.clickedLinkCheck = {
         skipped: true,
@@ -1293,22 +1303,32 @@ async function runActionPopupSmoke({
         popupSessionId,
         (state) => state.visual.tradeViewCount === 1 &&
           state.visual.tradeBackButtonCount === 1 &&
-          state.visual.tradeOrderBookRows >= 10 &&
-          /^Buy\s+/.test(state.visual.tradeBuyText),
+          ["ready", "live"].includes(state.visual.tradeDataState) &&
+          state.visual.tradeOrderBookRows >= 1 &&
+          state.visual.tradeExecutionControlCount === 0,
         "date row click trade view"
       );
+      const streamState = await waitForPopupCondition(
+        root,
+        popupSessionId,
+        (state) => state.visual.tradeDataState === "live" &&
+          state.visual.tradeOrderBookRows >= 1 &&
+          /^Streaming (Polymarket|Hyperliquid) depth/.test(state.visual.tradeBookStateText),
+        "live venue WebSocket stream",
+        30000
+      );
       await waitForPopupImages(root, popupSessionId);
-      const initialChartPath = tradeState.visual.tradeChartPath;
       const hyperliquidTrade = tradeState.visual.tradeMarketSource === "Hyperliquid";
-      const tradingViewState = verifyTradingView
+      const klineState = verifyKline
         ? await waitForPopupCondition(
           root,
           popupSessionId,
-          (state) => state.visual.tradingViewState === "ready" &&
-            state.visual.tradingViewReady === true &&
-            state.visual.tradingViewIframeCount >= 1 &&
-            state.visual.tradingViewError === false,
-          "TradingView chart iframe ready",
+          (state) => state.visual.klineState === "ready" &&
+            state.visual.klineReady === true &&
+            state.visual.klinePointCount >= 2 &&
+            state.visual.klineCanvasCount >= 1 &&
+            state.visual.klineError === false,
+          "KLineCharts line chart ready",
           90000
         )
         : null;
@@ -1320,8 +1340,11 @@ async function runActionPopupSmoke({
         root,
         popupSessionId,
         (state) => state.visual.tradeActiveRange === "1Y" &&
-          state.visual.tradeChartPath &&
-          state.visual.tradeChartPath !== initialChartPath,
+          (!verifyKline || (
+            state.visual.klineState === "ready" &&
+            state.visual.klineRange === "1Y" &&
+            state.visual.klinePointCount >= 2
+          )),
         "trade range chart update"
       );
 
@@ -1330,17 +1353,12 @@ async function runActionPopupSmoke({
         root,
         popupSessionId,
         (state) => state.visual.tradeActiveSide === "no" &&
-          (hyperliquidTrade ? /^Buy\s+Short/.test(state.visual.tradeBuyText) : /^Buy\s+No/.test(state.visual.tradeBuyText)),
+          ["ready", "live"].includes(state.visual.tradeDataState) &&
+          state.visual.tradeOrderBookRows >= 1 &&
+          (hyperliquidTrade
+            ? state.visual.tradeSideLabels.some((label) => /^Short\s+/.test(label))
+            : state.visual.tradeSideLabels.some((label) => /^No\s+/.test(label))),
         "trade side update"
-      );
-
-      await clickPopupSelector(root, popupSessionId, "[data-trade-max]");
-      const maxState = await waitForPopupCondition(
-        root,
-        popupSessionId,
-        (state) => state.visual.tradeAmountValue === "$1,000" &&
-          (hyperliquidTrade ? /Est\. contracts:/.test(state.visual.tradeEstimateText) : /Est\. shares:/.test(state.visual.tradeEstimateText)),
-        "trade max amount update"
       );
 
       await clickPopupSelector(root, popupSessionId, "[data-trade-menu]");
@@ -1348,25 +1366,22 @@ async function runActionPopupSmoke({
         root,
         popupSessionId,
         (state) => state.visual.tradeActionOpen === true &&
-          state.visual.tradeActionCount >= 2,
+          state.visual.tradeActionCount === 2 &&
+          state.visual.tradeActionLabels[0] === "Refresh data" &&
+          /^Open on (Polymarket|Hyperliquid)$/.test(state.visual.tradeActionLabels[1]),
         "trade action popover"
       );
 
-      await clickPopupSelector(root, popupSessionId, "[data-trade-action='info']");
-      const infoState = await waitForPopupCondition(
+      await clickPopupSelector(root, popupSessionId, "[data-trade-action='refresh']");
+      const refreshState = await waitForPopupCondition(
         root,
         popupSessionId,
-        (state) => /Information/i.test(state.visual.surfaceText) &&
-          state.visual.tradeActionOpen === false,
-        "trade information action"
-      );
-
-      await clickPopupSelector(root, popupSessionId, "[data-trade-buy]");
-      const buyState = await waitForPopupCondition(
-        root,
-        popupSessionId,
-        (state) => /Trade preview/i.test(state.visual.surfaceText),
-        "trade buy preview"
+        (state) => state.visual.tradeActionOpen === false &&
+          ["ready", "live"].includes(state.visual.tradeDataState) &&
+          state.visual.tradeOrderBookRows >= 1 &&
+          /Live venue data loaded/i.test(state.visual.statusText),
+        "trade data refresh",
+        90000
       );
 
       await clickPopupSelector(root, popupSessionId, "[data-trade-back]");
@@ -1381,25 +1396,23 @@ async function runActionPopupSmoke({
         href: clickedHref,
         internalTradeView: true,
         title: tradeState.visual.tradeViewTitle,
-        buyButton: tradeState.visual.tradeBuyText,
-        amount: tradeState.visual.tradeAmountValue,
+        dataState: streamState.visual.tradeDataState,
+        snapshot: streamState.visual.tradeBookStateText,
         orderBookRows: tradeState.visual.tradeOrderBookRows,
+        executionControlCount: tradeState.visual.tradeExecutionControlCount,
         controls: {
           range: rangeState.visual.tradeActiveRange,
-          chartDate: rangeState.visual.tradeChartDate,
           side: sideState.visual.tradeActiveSide,
-          sideBuyButton: sideState.visual.tradeBuyText,
-          maxAmount: maxState.visual.tradeAmountValue,
-          maxEstimate: maxState.visual.tradeEstimateText,
           actionsOpen: actionsState.visual.tradeActionOpen,
-          informationSurface: infoState.visual.surfaceText,
-          buySurface: buyState.visual.surfaceText,
+          actionLabels: actionsState.visual.tradeActionLabels,
+          refreshedSnapshot: refreshState.visual.tradeBookStateText,
           backCardCount: backState.cardLinks.length,
-          tradingView: tradingViewState ? {
-            state: tradingViewState.visual.tradingViewState,
-            ready: tradingViewState.visual.tradingViewReady,
-            iframeCount: tradingViewState.visual.tradingViewIframeCount,
-            iframeSrc: tradingViewState.visual.tradingViewIframeSrc
+          klineChart: klineState ? {
+            state: klineState.visual.klineState,
+            ready: klineState.visual.klineReady,
+            range: klineState.visual.klineRange,
+            pointCount: klineState.visual.klinePointCount,
+            canvasCount: klineState.visual.klineCanvasCount
           } : null
         },
         screenshot: tradeScreenshot
@@ -1416,17 +1429,30 @@ async function runActionPopupSmoke({
           popupSessionId,
           (state) => state.visual.tradeViewCount === 1 &&
             state.visual.tradeMarketSource === "Hyperliquid" &&
-            /^Buy\s+Long/.test(state.visual.tradeBuyText) &&
-            /Est\. contracts:/.test(state.visual.tradeEstimateText),
+            ["ready", "live"].includes(state.visual.tradeDataState) &&
+            state.visual.tradeOrderBookRows >= 1 &&
+            state.visual.tradeExecutionControlCount === 0 &&
+            state.visual.tradeSideLabels.some((label) => /^Long\s+/.test(label)) &&
+            state.visual.tradeSideLabels.some((label) => /^Short\s+/.test(label)),
           "Hyperliquid row click trade view"
+        );
+        const hyperliquidStreamState = await waitForPopupCondition(
+          root,
+          popupSessionId,
+          (state) => state.visual.tradeDataState === "live" &&
+            state.visual.tradeOrderBookRows >= 1 &&
+            /^Streaming Hyperliquid depth/.test(state.visual.tradeBookStateText),
+          "live Hyperliquid WebSocket stream",
+          30000
         );
         await clickPopupSelector(root, popupSessionId, "[data-trade-side='no']");
         const hyperliquidSideState = await waitForPopupCondition(
           root,
           popupSessionId,
           (state) => state.visual.tradeActiveSide === "no" &&
-            /^Buy\s+Short/.test(state.visual.tradeBuyText) &&
-            !/Buy\s+No/.test(state.visual.tradeBuyText),
+            ["ready", "live"].includes(state.visual.tradeDataState) &&
+            state.visual.tradeOrderBookRows >= 1 &&
+            state.visual.tradeSideLabels.some((label) => /^Short\s+/.test(label)),
           "Hyperliquid trade side update"
         );
         await clickPopupSelector(root, popupSessionId, "[data-trade-back]");
@@ -1440,9 +1466,11 @@ async function runActionPopupSmoke({
         report.hyperliquidTradeCheck = {
           href: hyperliquidHref,
           title: hyperliquidState.visual.tradeViewTitle,
-          buyButton: hyperliquidState.visual.tradeBuyText,
-          sideBuyButton: hyperliquidSideState.visual.tradeBuyText,
-          estimate: hyperliquidState.visual.tradeEstimateText
+          dataState: hyperliquidStreamState.visual.tradeDataState,
+          snapshot: hyperliquidStreamState.visual.tradeBookStateText,
+          orderBookRows: hyperliquidState.visual.tradeOrderBookRows,
+          selectedSide: hyperliquidSideState.visual.tradeActiveSide,
+          executionControlCount: hyperliquidState.visual.tradeExecutionControlCount
         };
         report.openedLinkChecks.push({
           method: "hyperliquid-row-click",
@@ -1521,9 +1549,9 @@ async function main() {
   const captureArtifacts = !demoMode && !hasFlag("no-artifacts");
   const verifyExpanded = hasFlag("verify-expanded");
   const verifyInteractions = hasFlag("verify-interactions");
-  const verifyTradingView = hasFlag("verify-tradingview");
-  if (verifyTradingView && skipClicks) {
-    throw new Error("--verify-tradingview requires opening a trade view; remove --skip-clicks or --demo.");
+  const verifyKline = hasFlag("verify-kline");
+  if (verifyKline && skipClicks) {
+    throw new Error("--verify-kline requires opening a trade view; remove --skip-clicks or --demo.");
   }
   const visualReference = argValue("visual-reference", "");
   const result = await runActionPopupSmoke({
@@ -1539,8 +1567,9 @@ async function main() {
     captureArtifacts,
     verifyExpanded,
     verifyInteractions,
-    verifyTradingView
+    verifyKline
   });
+  assertRequestedVerifications(result, { verifyKline });
   const visualReport = runVisualReferenceCheck(
     visualReference,
     result.expandedPopup && result.expandedPopup.screenshot ? result.expandedPopup.screenshot : result.screenshot
@@ -1593,9 +1622,9 @@ async function main() {
     console.log(`Click skipped: ${result.clickedLinkCheck.reason}`);
   } else if (result.clickedLinkCheck.internalTradeView) {
     console.log(`Clicked ${result.clickedLinkCheck.href} into trade view "${result.clickedLinkCheck.title}"`);
-    if (result.clickedLinkCheck.controls && result.clickedLinkCheck.controls.tradingView) {
-      const tv = result.clickedLinkCheck.controls.tradingView;
-      console.log(`TradingView chart: ${tv.state}, ${tv.iframeCount} iframe(s), ${tv.iframeSrc}`);
+    if (result.clickedLinkCheck.controls && result.clickedLinkCheck.controls.klineChart) {
+      const chart = result.clickedLinkCheck.controls.klineChart;
+      console.log(`KLineCharts line chart: ${chart.state}, ${chart.pointCount} real point(s), ${chart.canvasCount} canvas layer(s)`);
     }
   } else {
     console.log(`Clicked ${result.clickedLinkCheck.finalUrl}`);

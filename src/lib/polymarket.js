@@ -22,6 +22,7 @@
   const GAMMA_API = "https://gamma-api.polymarket.com";
   const DATA_API = "https://data-api.polymarket.com";
   const CLOB_API = "https://clob.polymarket.com";
+  const CLOB_WS = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
   const POLYMARKET = "https://polymarket.com";
   const DEFAULT_MIN_CONFIDENCE = 55;
   const DEFAULT_MAX_RESULTS = 5;
@@ -1887,6 +1888,240 @@
       .filter(Boolean);
   }
 
+  function streamTimestamp(value) {
+    const timestamp = toNumber(value);
+    if (timestamp === null || timestamp <= 0) {
+      return Date.now();
+    }
+    return timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+  }
+
+  function sortedClobBook(book = {}) {
+    return {
+      bids: normalizeClobOrderRows(book.bids).sort((left, right) => right.price - left.price),
+      asks: normalizeClobOrderRows(book.asks).sort((left, right) => left.price - right.price)
+    };
+  }
+
+  function updateClobLevel(book, side, price, size) {
+    const key = side === "BUY" ? "bids" : side === "SELL" ? "asks" : "";
+    if (!key || price === null || size === null || price <= 0 || size < 0) {
+      return;
+    }
+    const rows = (book[key] || []).filter((row) => row.price !== price);
+    if (size > 0) {
+      rows.push({ price, size });
+    }
+    rows.sort((left, right) => key === "bids" ? right.price - left.price : left.price - right.price);
+    book[key] = rows;
+  }
+
+  function openTradeStream(candidate = {}, handlers = {}, options = {}) {
+    const tokenIds = candidateClobTokenIds(candidate).slice(0, 2);
+    const WebSocketImpl = options.WebSocketImpl || (typeof WebSocket === "function" ? WebSocket : null);
+    if (!WebSocketImpl || !tokenIds.length) {
+      return null;
+    }
+
+    const setIntervalImpl = options.setIntervalImpl || setInterval;
+    const clearIntervalImpl = options.clearIntervalImpl || clearInterval;
+    const setTimeoutImpl = options.setTimeoutImpl || setTimeout;
+    const clearTimeoutImpl = options.clearTimeoutImpl || clearTimeout;
+    const reconnectDelayMs = Number.isFinite(Number(options.reconnectDelayMs))
+      ? Number(options.reconnectDelayMs)
+      : 1000;
+    const books = {};
+    for (const tokenId of tokenIds) {
+      books[tokenId] = sortedClobBook(candidate.tradeBooksByTokenId && candidate.tradeBooksByTokenId[tokenId]);
+    }
+
+    let stopped = false;
+    let socket = null;
+    let heartbeat = null;
+    let retry = null;
+
+    const notify = (name, value) => {
+      if (typeof handlers[name] === "function") {
+        handlers[name](value);
+      }
+    };
+
+    const clearHeartbeat = () => {
+      if (heartbeat !== null) {
+        clearIntervalImpl(heartbeat);
+        heartbeat = null;
+      }
+    };
+
+    const emitBook = (tokenId, timestamp) => {
+      const book = books[tokenId] || { bids: [], asks: [] };
+      notify("onBook", {
+        tokenId,
+        book: {
+          bids: book.bids.map((row) => ({ ...row })),
+          asks: book.asks.map((row) => ({ ...row }))
+        },
+        timestamp
+      });
+    };
+
+    const emitMidpoint = (tokenId, timestamp, bestBid, bestAsk) => {
+      const bid = toNumber(bestBid);
+      const ask = toNumber(bestAsk);
+      if (!tokenId || bid === null || ask === null || bid <= 0 || ask <= 0) {
+        return;
+      }
+      notify("onPrice", {
+        tokenId,
+        price: Number(((bid + ask) / 2).toFixed(8)),
+        timestamp,
+        source: "midpoint"
+      });
+    };
+
+    const emitBookMidpoint = (tokenId, timestamp) => {
+      const book = books[tokenId] || { bids: [], asks: [] };
+      emitMidpoint(tokenId, timestamp, book.bids[0] && book.bids[0].price, book.asks[0] && book.asks[0].price);
+    };
+
+    const handlePayload = (payload) => {
+      for (const event of Array.isArray(payload) ? payload : [payload]) {
+        if (!event || typeof event !== "object") {
+          continue;
+        }
+        const eventType = event.event_type || event.type;
+        const timestamp = streamTimestamp(event.timestamp);
+        if (eventType === "book") {
+          const tokenId = String(event.asset_id || "").trim();
+          if (!tokenId) {
+            continue;
+          }
+          books[tokenId] = sortedClobBook(event);
+          emitBook(tokenId, timestamp);
+          emitBookMidpoint(tokenId, timestamp);
+          continue;
+        }
+        if (eventType === "price_change") {
+          const changedTokens = new Set();
+          const liveQuotes = new Map();
+          for (const change of Array.isArray(event.price_changes) ? event.price_changes : []) {
+            const tokenId = String(change && change.asset_id || "").trim();
+            if (!tokenId) {
+              continue;
+            }
+            books[tokenId] = books[tokenId] || { bids: [], asks: [] };
+            updateClobLevel(
+              books[tokenId],
+              String(change.side || "").toUpperCase(),
+              toNumber(change.price),
+              toNumber(change.size)
+            );
+            changedTokens.add(tokenId);
+            if (toNumber(change.best_bid) !== null && toNumber(change.best_ask) !== null) {
+              liveQuotes.set(tokenId, {
+                bestBid: change.best_bid,
+                bestAsk: change.best_ask
+              });
+            }
+          }
+          for (const tokenId of changedTokens) {
+            emitBook(tokenId, timestamp);
+            const quote = liveQuotes.get(tokenId);
+            if (quote) {
+              emitMidpoint(tokenId, timestamp, quote.bestBid, quote.bestAsk);
+            } else {
+              emitBookMidpoint(tokenId, timestamp);
+            }
+          }
+          continue;
+        }
+        if (eventType === "best_bid_ask") {
+          const tokenId = String(event.asset_id || "").trim();
+          emitMidpoint(tokenId, timestamp, event.best_bid, event.best_ask);
+          continue;
+        }
+        if (eventType === "last_trade_price") {
+          const tokenId = String(event.asset_id || "").trim();
+          const price = toNumber(event.price);
+          if (tokenId && price !== null && price > 0) {
+            notify("onPrice", { tokenId, price, timestamp, source: "trade" });
+          }
+        }
+      }
+    };
+
+    const connect = () => {
+      if (stopped) {
+        return;
+      }
+      retry = null;
+      let closed = false;
+      try {
+        socket = new WebSocketImpl(CLOB_WS);
+      } catch (error) {
+        notify("onError", error);
+        notify("onClose", error);
+        retry = setTimeoutImpl(connect, reconnectDelayMs);
+        return;
+      }
+      socket.addEventListener("open", () => {
+        if (stopped) {
+          return;
+        }
+        socket.send(JSON.stringify({
+          assets_ids: tokenIds,
+          type: "market",
+          custom_feature_enabled: true
+        }));
+        clearHeartbeat();
+        heartbeat = setIntervalImpl(() => {
+          if (!stopped && socket && socket.readyState === 1) {
+            socket.send("PING");
+          }
+        }, 10000);
+        notify("onOpen");
+      });
+      socket.addEventListener("message", (event) => {
+        if (event.data === "PONG") {
+          return;
+        }
+        try {
+          handlePayload(JSON.parse(event.data));
+        } catch (error) {
+          notify("onError", error);
+        }
+      });
+      socket.addEventListener("error", (error) => {
+        notify("onError", error);
+      });
+      socket.addEventListener("close", (event) => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        clearHeartbeat();
+        if (stopped) {
+          return;
+        }
+        notify("onClose", event);
+        retry = setTimeoutImpl(connect, reconnectDelayMs);
+      });
+    };
+
+    connect();
+    return function stopTradeStream() {
+      stopped = true;
+      clearHeartbeat();
+      if (retry !== null) {
+        clearTimeoutImpl(retry);
+        retry = null;
+      }
+      if (socket && socket.readyState < 2) {
+        socket.close();
+      }
+    };
+  }
+
   async function fetchClobTradeData(candidate, options = {}) {
     const fetchImpl = options.fetchImpl || (typeof fetch !== "undefined" ? fetch.bind(globalThis) : null);
     const tokenIds = candidateClobTokenIds(candidate);
@@ -1895,10 +2130,9 @@
     }
 
     const timeoutMs = Number(options.timeoutMs) || 6500;
-    const tokensForBooks = tokenIds.slice(0, 2);
+    const tradeTokenIds = tokenIds.slice(0, 2);
     const tradeBooksByTokenId = {};
-    const primaryTokenId = tokenIds[0];
-    const bookRequests = Promise.allSettled(tokensForBooks.map(async (tokenId) => {
+    const bookRequests = Promise.allSettled(tradeTokenIds.map(async (tokenId) => {
       const payload = await withTimeout(fetchJson(fetchImpl, `${CLOB_API}/book?token_id=${encodeURIComponent(tokenId)}`), timeoutMs);
       const book = normalizeClobBook(payload);
       if (book) {
@@ -1910,26 +2144,26 @@
       ["1D", "1d", 15],
       ["1W", "1w", 60],
       ["1M", "1m", 60],
-      ["1Y", "1y", 1440],
       ["ALL", "max", 1440]
     ];
-    const histories = {};
-    const chartRequests = Promise.allSettled(historyRequests.map(async ([range, interval, fidelity]) => {
-      const params = new URLSearchParams({
-        market: primaryTokenId,
-        interval,
-        fidelity: String(fidelity)
-      });
+    const tradeChartHistoryByTokenId = {};
+    const chartRequests = Promise.allSettled(tradeTokenIds.flatMap((tokenId) => historyRequests.map(async ([range, interval, fidelity]) => {
+      const params = new URLSearchParams({ market: tokenId, interval, fidelity: String(fidelity) });
       const payload = await withTimeout(fetchJson(fetchImpl, `${CLOB_API}/prices-history?${params.toString()}`), timeoutMs);
       const history = normalizeClobHistory(payload);
       if (history.length) {
-        histories[range] = history;
+        tradeChartHistoryByTokenId[tokenId] = tradeChartHistoryByTokenId[tokenId] || {};
+        tradeChartHistoryByTokenId[tokenId][range] = history;
       }
-    }));
-    await Promise.all([bookRequests, chartRequests]);
+    })));
+    const [bookResults, chartResults] = await Promise.all([bookRequests, chartRequests]);
+    const settled = [...bookResults, ...chartResults];
+    if (settled.length && settled.every((result) => result.status === "rejected")) {
+      throw settled[0].reason || new Error("Polymarket CLOB trade data request failed.");
+    }
 
     const hasBooks = Object.keys(tradeBooksByTokenId).length > 0;
-    const hasHistory = Object.keys(histories).length > 0;
+    const hasHistory = Object.keys(tradeChartHistoryByTokenId).length > 0;
     if (!hasBooks && !hasHistory) {
       return null;
     }
@@ -1937,7 +2171,7 @@
     return {
       tradeDataSource: "clob",
       tradeBooksByTokenId,
-      tradeChartHistoryByTokenId: hasHistory ? { [primaryTokenId]: histories } : {}
+      tradeChartHistoryByTokenId
     };
   }
 
@@ -2060,6 +2294,7 @@
     GAMMA_API,
     DATA_API,
     CLOB_API,
+    CLOB_WS,
     POLYMARKET,
     safeJsonArray,
     toNumber,
@@ -2077,6 +2312,7 @@
     candidateAngleProfile,
     fetchCandidates,
     fetchClobTradeData,
+    openTradeStream,
     fetchMarketPositionSummary,
     enrichGroupsWithTraderCounts,
     trendingMarkets,

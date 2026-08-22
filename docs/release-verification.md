@@ -1,39 +1,46 @@
 # Release Verification
 
-Last verified: 2026-05-23 02:48 UTC.
+Last verified: 2026-08-22 00:41 UTC.
+
+Release status: `0.1.0` direct-install pre-alpha candidate.
 
 ## Commands Passed
 
-- `npm test`
-- `npm run test:layout`
-- `npm run test:polymarket:live`
-- `npm run test:articles:live`
-- `npm run test:release`
+- `npm ci` — 42 packages audited, 0 vulnerabilities.
+- `npm test` — 171/171 tests passed.
+- `npm run test:layout` — popup, compact, 390 px, and 320 px layouts passed.
+- `npm run test:live` — public endpoint and current-article QA passed.
+- `npm run test:browser` — source extension chart and interaction flows passed.
+- `node scripts/browser-smoke.js --verify-kline --extension-path="dist/pmex-market-matcher-0.1.0-extension"` — packaged chart flow passed.
+- `node scripts/browser-smoke.js --verify-interactions --verify-expanded --skip-clicks --extension-path="dist/pmex-market-matcher-0.1.0-extension"` — packaged interaction flow passed.
+- `npm audit --audit-level=high` — 0 vulnerabilities.
+- `npm run package:release` — clean extension/source folders, ZIPs, and SHA-256 checksums generated.
 
 ## Live QA Evidence
 
-- Live Polymarket API smoke checked 15/15 endpoint requests and parsed 442 candidates.
-- Live article QA processed 8 current readable articles across politics/elections, crypto, economy/markets, AI/technology, geopolitics, sports, entertainment, and weather/climate.
-- 6 current articles displayed live parent event matches.
-- 2 current articles correctly displayed the no-strong-match state.
-- The browser smoke loaded the unpacked extension in Chrome, confirmed pre-activation tab access was blocked, opened the popup through the `_execute_action` browser event, rendered 2 parent event cards, clicked the first parent event card, and opened `https://polymarket.com/event/andy-burnham-out-as-mayor-of-greater-manchester-by-may-31`.
-- Browser smoke printed the live article title, local model topic/angle/confidence, model keywords, generated queries, and displayed parent event names.
-- `node --test` passed 57/57 tests, including the local model latency budget check.
-- Popup layout smoke passed at 390 px and 320 px widths. The latest inspected layout screenshot was `test-artifacts/popup-layout-popup-2026-05-23T02-47-46-048Z.png`.
-- The latest inspected real extension popup screenshot was `test-artifacts/browser-smoke-popup-2026-05-23T02-48-12-305Z.png`.
-- No live JSON report artifacts were generated.
+- Polymarket smoke checked 10/10 public endpoint requests and parsed 447 candidates.
+- Article QA processed eight current readable articles across politics/elections, crypto, economy/markets, AI/technology, geopolitics, sports, entertainment, and weather/climate.
+- Five articles displayed live parent-event matches; three displayed the no-strong-match state.
+- Chrome blocked active-tab access before manual activation, then opened the Manifest V3 popup through the extension action.
+- The live chart gate opened a current Polymarket market and verified KLineCharts was ready with 729 real history points and six canvas layers.
+- Trending, manual search, refresh, data-use disclosure, and anchored popup interaction checks passed in both the source extension and packaged artifact.
+- The packaged extension loaded from `dist/pmex-market-matcher-0.1.0-extension`, not from the working source tree.
 
-## Current UX Contract
+## Release Contract
 
-- The popup displays parent event cards only.
-- Child markets are used for scoring, filtering, and related-market counts, but they are not shown as popup dropdowns or separate result cards.
-- Parent event cards link to Polymarket event pages, where Polymarket displays the related markets under the topic.
-- Outcome display is option-agnostic. Yes/No markets render Yes and No, sports/team markets keep team names, and multi-option markets keep the original Polymarket option names.
-- Missing outcome prices render as `n/a`, not `0%`.
-- The visible YAKE/TextRank/PageRank strategy selector has been removed; the popup uses the local article-angle model path.
+- The extension is read-only: it does not connect wallets, hold credentials, submit orders, or execute trades.
+- Article content is analyzed locally. The article title and derived search terms are sent to Polymarket; public market-data requests are sent to Polymarket and Hyperliquid.
+- Trade views use public venue history and WebSocket updates. Missing venue data renders unavailable instead of synthetic quotes, charts, tickets, or books.
+- Release archives are generated from explicit allowlists. Internal design artifacts, generated screenshots, development dependencies, and the removed TradingView bundle are excluded.
+- `dist/SHA256SUMS.txt` is the canonical checksum file for the generated ZIPs.
 
-## Current Known Issues
+## Distribution Constraint
 
-- Live relevance still needs human review during release checks. The automated threshold can prove that matches are live and structurally valid, but not that every candidate is editorially ideal.
-- Some publishers can change markup, block automation, or show different content in browser versus RSS fetches. Any extraction failure or mismatch should be saved as a regression fixture.
-- The local model is intentionally small and transparent. It should stay JSON-based unless fixture and live QA data show that a heavier local model materially improves precision without popup latency or size problems.
+This build is prepared for source release and direct developer-mode installation. It is not a Chrome Web Store candidate: the Chrome Web Store policy update enforced from August 1, 2026 prohibits products that facilitate or promote real-money prediction markets. See the official [regulated goods and services policy](https://developer.chrome.com/docs/webstore/program-policies/regulated-goods-and-services/) and [2026 policy update](https://developer.chrome.com/blog/cws-policy-updates-2026).
+
+## Known Issues
+
+- Relevance remains pre-alpha. During this run, the local classifier mislabeled a BBC budget article as sports, and the AI/technology sample produced a loosely related drone market. Automated checks prove live and structurally valid results, not editorially ideal matches.
+- Live QA depends on third-party APIs, WebSockets, publisher markup, and current market inventory. A future failure may reflect upstream availability rather than a packaged-code regression.
+- Direct installation requires Chrome developer mode and manual loading of the unpacked extension folder.
+- PMEx is unofficial and is not affiliated with, endorsed by, or sponsored by Polymarket or Hyperliquid.

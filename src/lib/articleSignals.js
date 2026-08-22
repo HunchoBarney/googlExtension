@@ -212,10 +212,6 @@
       .filter(Boolean);
   }
 
-  function titleCasePhrase(tokens) {
-    return tokens.join(" ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
-  }
-
   function extractKeywords(text, title = "") {
     const titleTokenSet = new Set(tokenize(title).filter((token) => !STOPWORDS.has(token)));
     const sourceSentences = [

@@ -10,6 +10,7 @@ const {
 } = require("./qaUtils");
 
 const ROOT = path.join(__dirname, "..");
+const MANROPE_FONT = path.join(ROOT, "src/popup/assets/fonts/manrope-latin-variable.woff2");
 
 const FIXTURE_IMAGES = [
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAB80lEQVR42u3bwU3DMBQG4MyAGACJDThwYgfmYBLEbgwE4gDtoVKoWnDsFzuxvye9S+sq6v/VstO60+3Dy/ee++Pza9c9AQAAAAAAAAAAAAAAAAAAAAAAbBDg/um1agMAAAAAgH0AHCs12NSxABIB5pUSfupYAAkAlyol/BQEAGaANQCAXRAAAAAAAACwP4DSnRGAAoCIewMAmQBRd8c1AI5lBjSaAfOyBlReAy6VXdCKADdvz7/6Up2PARAAcB7qEoBaEF0CXAszB2BtiG4AUkIsAZi/FsAZwNIgcwHWWLR3D5ATZtRrABw6J9Co8cMD5IYaORZARrCR44Y9nFvy6Y4aE4HQHUBKeKXPDw9QutXMfW4NBAAA4sP/L8ylj6c2gESE1Fp6LQCBCDnXARCEkHuN7gG2Xu93j4t7En5bhEn4bRHMADPAGmAXFLQLAtD4PgBA4zthAI2/CxoCYKvfhuaEDwBAH7+I5YbfJUCL34SHBNjKqYiS8LsCaHUuaGiA1ifjSsPvAqDl2VAAhz6+iRanoyPC7wbghFDr/wFR4XcFMO81ACJD7x7gP4hae/zhAa5B1NjfA/ij19rRAMhEaBX+0AAnhJbhDw+whQYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOgT4Ae2umEuuaN/rwAAAABJRU5ErkJggg==",
@@ -35,7 +36,14 @@ function chromeExecutable() {
 }
 
 function pageHtml() {
-  const css = fs.readFileSync(path.join(ROOT, "src/popup/popup.css"), "utf8");
+  let css = fs.readFileSync(path.join(ROOT, "src/popup/popup.css"), "utf8");
+  if (fs.existsSync(MANROPE_FONT)) {
+    const embeddedFont = fs.readFileSync(MANROPE_FONT).toString("base64");
+    css = css.replace(
+      'url("./assets/fonts/manrope-latin-variable.woff2")',
+      `url("data:font/woff2;base64,${embeddedFont}")`
+    );
+  }
   const render = fs.readFileSync(path.join(ROOT, "src/popup/render.js"), "utf8");
   const popup = fs.readFileSync(path.join(ROOT, "src/popup/popup.html"), "utf8");
   return popup
@@ -71,6 +79,29 @@ async function renderFixture(page) {
         confidence: 92,
         traderCount: 12600,
         volume: 261000000,
+        tradeDataState: "ready",
+        tradeDataFetchedAt: Date.UTC(2026, 7, 19, 19, 30, 0),
+        tradeBooksByOutcome: {
+          yes: {
+            bids: [[0.31, 120], [0.30, 240], [0.29, 360], [0.28, 480], [0.27, 600]],
+            asks: [[0.32, 110], [0.33, 220], [0.34, 330], [0.35, 440], [0.36, 550]]
+          },
+          no: {
+            bids: [[0.67, 105], [0.66, 205], [0.65, 305]],
+            asks: [[0.68, 115], [0.69, 215], [0.70, 315]]
+          }
+        },
+        tradeChartHistory: {
+          "1M": [
+            { t: 1782163200, p: 0.24 },
+            { t: 1782422400, p: 0.27 },
+            { t: 1782681600, p: 0.25 },
+            { t: 1782940800, p: 0.31 },
+            { t: 1783200000, p: 0.29 },
+            { t: 1783459200, p: 0.34 },
+            { t: 1783718400, p: 0.32 }
+          ]
+        },
         markets: [
           {
             title: "US x Iran permanent peace deal by June 15?",
@@ -129,6 +160,40 @@ async function renderFixture(page) {
         confidence: 78,
         traderCount: 8700,
         volume: 1800000,
+        tradeDataState: "ready",
+        tradeDataFetchedAt: Date.UTC(2026, 7, 19, 19, 30, 0),
+        tradeBooksByOutcome: {
+          long: {
+            bids: [[95.11, 18.5], [95.10, 31.25], [95.09, 42], [95.08, 50], [95.07, 65]],
+            asks: [[95.12, 20], [95.13, 28.75], [95.14, 39.5], [95.15, 51], [95.16, 63]]
+          },
+          short: {
+            bids: [[95.11, 20], [95.10, 30]],
+            asks: [[95.12, 22], [95.13, 32]]
+          }
+        },
+        tradeChartHistoryByOutcome: {
+          long: {
+            "1M": [
+              { t: Date.UTC(2026, 6, 20), p: 92.4 },
+              { t: Date.UTC(2026, 6, 24), p: 93.1 },
+              { t: Date.UTC(2026, 6, 28), p: 92.8 },
+              { t: Date.UTC(2026, 7, 1), p: 94.0 },
+              { t: Date.UTC(2026, 7, 5), p: 94.6 },
+              { t: Date.UTC(2026, 7, 9), p: 95.12 }
+            ]
+          },
+          short: {
+            "1M": [
+              { t: Date.UTC(2026, 6, 20), p: 92.4 },
+              { t: Date.UTC(2026, 6, 24), p: 93.1 },
+              { t: Date.UTC(2026, 6, 28), p: 92.8 },
+              { t: Date.UTC(2026, 7, 1), p: 94.0 },
+              { t: Date.UTC(2026, 7, 5), p: 94.6 },
+              { t: Date.UTC(2026, 7, 9), p: 95.12 }
+            ]
+          }
+        },
         raw: {
           context: {
             markPx: "95.12"
@@ -193,13 +258,27 @@ async function renderFixture(page) {
 
 async function renderTradeFixture(page, candidateIndex = 0) {
   await page.evaluate((index) => {
+    document.documentElement.dataset.viewMode = "trade";
     const shell = document.querySelector(".popup-shell");
     const results = document.getElementById("results-region");
     if (shell) {
       shell.classList.add("is-trade-view");
     }
-    window.PMRender.renderTradeView(results, window.__LAYOUT_CANDIDATES[index]);
+    const candidate = window.__LAYOUT_CANDIDATES[index];
+    window.PMRender.renderTradeView(results, candidate);
+    const activeSide = results.querySelector(".trade-side-button.is-active");
+    window.PMKLineChart.mountTradeChart(results, candidate, {
+      range: "1M",
+      outcome: activeSide ? {
+        label: activeSide.dataset.tradeLabel || activeSide.textContent.trim(),
+        clobTokenId: activeSide.dataset.tradeTokenId || ""
+      } : undefined
+    });
   }, candidateIndex);
+  await page.waitForFunction(() => {
+    const state = document.querySelector("[data-kline-chart]")?.dataset.klineState;
+    return state === "ready" || state === "unavailable" || state === "error";
+  });
 }
 
 async function inspectTradeLayout(page) {
@@ -209,17 +288,17 @@ async function inspectTradeLayout(page) {
     const tradeTitle = document.querySelector(".trade-hero h2");
     const book = document.querySelector(".trade-order-book");
     const ticket = document.querySelector(".trade-ticket");
-    const buy = document.querySelector(".trade-buy-button");
     const chart = document.querySelector(".trade-chart-card");
-    const chartPrice = document.querySelector(".trade-chart-price");
-    const chartMarkerDot = document.querySelector(".trade-chart-marker-dot");
-    const chartPath = document.querySelector(".trade-chart-line")?.getAttribute("d") || "";
-    const chartPathPoints = [];
-    for (const match of chartPath.matchAll(/[ML](-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)) {
-      chartPathPoints.push({ x: Number(match[1]), y: Number(match[2]) });
-    }
-    const chartStartPoint = chartPathPoints[0] || null;
-    const chartEndPoint = chartPathPoints[chartPathPoints.length - 1] || null;
+    const chartHost = document.querySelector("[data-kline-chart]");
+    const heroCopy = document.querySelector(".trade-hero-copy");
+    const imageWrap = document.querySelector(".trade-image-wrap");
+    const backButton = document.querySelector("[data-trade-back]");
+    const moreButton = document.querySelector("[data-trade-menu]");
+    const rangeButton = document.querySelector(".trade-range-button");
+    const bookHeading = document.querySelector(".trade-book-column h3");
+    const bookHeader = document.querySelector(".trade-book-header");
+    const firstBookRow = document.querySelector(".trade-book-row");
+    const results = document.getElementById("results-region");
     const sourceBadge = document.querySelector(".trade-view .source-badge");
     const sourceMark = document.querySelector(".trade-image-wrap .source-mark");
     const sourceMarkStyle = sourceMark ? getComputedStyle(sourceMark) : null;
@@ -227,44 +306,68 @@ async function inspectTradeLayout(page) {
     const viewRect = view ? view.getBoundingClientRect() : null;
     const bookRect = book ? book.getBoundingClientRect() : null;
     const ticketRect = ticket ? ticket.getBoundingClientRect() : null;
-    const buyRect = buy ? buy.getBoundingClientRect() : null;
     const chartRect = chart ? chart.getBoundingClientRect() : null;
-    const chartPriceRect = chartPrice ? chartPrice.getBoundingClientRect() : null;
+    const chartHostRect = chartHost ? chartHost.getBoundingClientRect() : null;
+    const heroCopyRect = heroCopy ? heroCopy.getBoundingClientRect() : null;
+    const imageWrapRect = imageWrap ? imageWrap.getBoundingClientRect() : null;
+    const backButtonRect = backButton ? backButton.getBoundingClientRect() : null;
+    const moreButtonRect = moreButton ? moreButton.getBoundingClientRect() : null;
     const titleRect = tradeTitle ? tradeTitle.getBoundingClientRect() : null;
     const visibleOrderBookRows = shellRect ? [...document.querySelectorAll(".trade-book-row")]
       .filter((row) => {
         const rect = row.getBoundingClientRect();
-        return rect.top < shellRect.bottom && rect.bottom > shellRect.top;
+        return rect.top >= shellRect.top && rect.bottom <= shellRect.bottom;
       }).length : 0;
+    const upperBookRatio = viewRect && ticketRect && bookRect
+      ? (ticketRect.bottom - viewRect.top) / bookRect.height
+      : 0;
     return {
       bodyText: document.body.textContent.replace(/\s+/g, " ").trim(),
+      uiFontFamily: getComputedStyle(document.body).fontFamily,
+      manropeLoaded: [...document.fonts].some((face) => face.family.replace(/["']/g, "") === "Manrope" && face.status === "loaded"),
+      viewMode: document.documentElement.dataset.viewMode || "",
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
       documentWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
       shellRect: shellRect ? shellRect.toJSON() : null,
       viewRect: viewRect ? viewRect.toJSON() : null,
       chartRect: chartRect ? chartRect.toJSON() : null,
-      chartPriceRect: chartPriceRect ? chartPriceRect.toJSON() : null,
-      chartMarkerCx: chartMarkerDot ? Number(chartMarkerDot.getAttribute("cx")) : null,
-      chartMarkerCy: chartMarkerDot ? Number(chartMarkerDot.getAttribute("cy")) : null,
-      chartPathPointCount: chartPathPoints.length,
-      chartPathStartY: chartStartPoint ? chartStartPoint.y : null,
-      chartPathEndY: chartEndPoint ? chartEndPoint.y : null,
+      chartHostRect: chartHostRect ? chartHostRect.toJSON() : null,
+      heroCopyRect: heroCopyRect ? heroCopyRect.toJSON() : null,
+      imageWrapRect: imageWrapRect ? imageWrapRect.toJSON() : null,
+      backButtonRect: backButtonRect ? backButtonRect.toJSON() : null,
+      moreButtonRect: moreButtonRect ? moreButtonRect.toJSON() : null,
+      chartState: chartHost?.dataset.klineState || "",
+      chartRange: chartHost?.dataset.klineRange || "",
+      chartPointCount: Number(chartHost?.dataset.klinePoints || 0),
+      chartCanvasCount: chartHost ? chartHost.querySelectorAll("canvas").length : 0,
       ticketRect: ticketRect ? ticketRect.toJSON() : null,
-      buyRect: buyRect ? buyRect.toJSON() : null,
       bookRect: bookRect ? bookRect.toJSON() : null,
+      upperBookRatio,
+      resultsClientHeight: results?.clientHeight || 0,
+      resultsScrollHeight: results?.scrollHeight || 0,
       tradeViewCount: document.querySelectorAll(".trade-view").length,
       activeRange: document.querySelector(".trade-range-button.is-active")?.textContent.trim() || "",
       tradeTitle: tradeTitle?.textContent.trim() || "",
       tradeTitleFontSize: tradeTitle ? Number.parseFloat(getComputedStyle(tradeTitle).fontSize) : 0,
+      tradeMetaFontSize: Number.parseFloat(getComputedStyle(document.querySelector(".trade-meta")).fontSize),
       tradeTitleRect: titleRect ? titleRect.toJSON() : null,
       tradeMeta: document.querySelector(".trade-meta")?.textContent.replace(/\s+/g, " ").trim() || "",
       sourceLabel: sourceBadge?.getAttribute("aria-label") || "",
       sourceMarkBackground: sourceMarkStyle ? `${sourceMarkStyle.backgroundImage} ${sourceMarkStyle.backgroundColor}` : "",
       tradeActionLabels: [...document.querySelectorAll("[data-trade-action]")].map((node) => node.textContent.trim()),
-      buyText: buy?.textContent.trim() || "",
-      estimateText: document.querySelector(".trade-estimate")?.textContent.trim() || "",
+      sideLabels: [...document.querySelectorAll(".trade-side-button")].map((node) => node.textContent.replace(/\s+/g, " ").trim()),
+      executionControlCount: document.querySelectorAll("[data-trade-amount], [data-trade-max], [data-trade-buy], [data-trade-estimate]").length,
+      tradeDataState: book?.dataset.tradeDataState || "",
+      bookStateText: document.querySelector(".trade-book-state")?.textContent.trim() || "",
       orderBookRows: document.querySelectorAll(".trade-book-row").length,
       visibleOrderBookRows,
-      sourceBadgeCount: document.querySelectorAll(".trade-view .source-badge").length
+      sourceBadgeCount: document.querySelectorAll(".trade-view .source-badge").length,
+      rangeButtonRect: rangeButton?.getBoundingClientRect().toJSON() || null,
+      bookHeadingFontSize: bookHeading ? Number.parseFloat(getComputedStyle(bookHeading).fontSize) : 0,
+      bookHeaderFontSize: bookHeader ? Number.parseFloat(getComputedStyle(bookHeader).fontSize) : 0,
+      bookRowFontSize: firstBookRow ? Number.parseFloat(getComputedStyle(firstBookRow).fontSize) : 0,
+      bookRowRect: firstBookRow?.getBoundingClientRect().toJSON() || null
     };
   });
 }
@@ -291,6 +394,8 @@ async function inspectLayout(page) {
     return {
       viewportWidth,
       viewportHeight: window.innerHeight,
+      uiFontFamily: getComputedStyle(document.body).fontFamily,
+      manropeLoaded: [...document.fonts].some((face) => face.family.replace(/["']/g, "") === "Manrope" && face.status === "loaded"),
       documentWidth,
       documentHeight: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
       overflowingElements,
@@ -376,9 +481,19 @@ async function inspectLayout(page) {
       actionMenuRect: document.querySelector(".action-menu")?.getBoundingClientRect().toJSON(),
       actionMenuTextClipped: [...document.querySelectorAll(".action-menu-item span")].some((node) => node.scrollWidth > node.clientWidth + 1),
       searchRect: document.querySelector(".market-search")?.getBoundingClientRect().toJSON(),
+      searchFontSize: Number.parseFloat(getComputedStyle(document.querySelector("#market-search-input")).fontSize),
       tabRowRect: document.querySelector(".market-tabs")?.getBoundingClientRect().toJSON(),
+      tabButtonRects: [...document.querySelectorAll(".tab-button")].map((node) => node.getBoundingClientRect().toJSON()),
+      tabsOverlap: (() => {
+        const tabs = [...document.querySelectorAll(".tab-button")].map((node) => node.getBoundingClientRect());
+        return tabs.some((tab, index) => index > 0 && tab.left < tabs[index - 1].right - 1);
+      })(),
+      tabTextOverflowing: [...document.querySelectorAll(".tab-button")]
+        .some((node) => node.scrollWidth > node.clientWidth + 1),
       menuButtonRect: document.querySelector(".menu-button")?.getBoundingClientRect().toJSON(),
       leadTitleRect: document.querySelector(".market-card .event-parent-title, .market-card .market-title")?.getBoundingClientRect().toJSON(),
+      leadTitleFontSize: Number.parseFloat(getComputedStyle(document.querySelector(".market-card .event-parent-title, .market-card .market-title")).fontSize),
+      leadQuoteFontSize: Number.parseFloat(getComputedStyle(document.querySelector(".market-card .market-quote strong")).fontSize),
       leadCardRect: document.querySelector(".market-card")?.getBoundingClientRect().toJSON(),
       leadImageRect: document.querySelector(".market-card .market-image, .market-card .market-image-fallback")?.getBoundingClientRect().toJSON(),
       expandedCaretCount: document.querySelectorAll(".market-expanded-caret").length,
@@ -409,7 +524,7 @@ async function inspectLayout(page) {
         }
         const rect = card.getBoundingClientRect();
         const resultsRect = results.getBoundingClientRect();
-        return rect.bottom > resultsRect.top + 80 && rect.top < resultsRect.bottom - 80;
+        return rect.bottom > resultsRect.top + 48 && rect.top < resultsRect.bottom - 48;
       })(),
       visibleCardCount: [...document.querySelectorAll(".market-card")]
         .filter((card) => {
@@ -467,18 +582,22 @@ async function main() {
         }
       });
       await page.setContent(pageHtml(), { waitUntil: "domcontentloaded" });
+      await page.addScriptTag({ path: path.join(ROOT, "src/vendor/klinecharts/klinecharts.min.js") });
+      await page.addScriptTag({ path: path.join(ROOT, "src/popup/klinecharts.js") });
       if (viewport.name === "popup") {
         await page.evaluate(() => {
           document.documentElement.dataset.viewMode = "expanded";
         });
       }
       await renderFixture(page);
+      await page.evaluate(() => document.fonts.ready);
       const screenshot = artifactPath(`popup-layout-${viewport.name}`, "png");
       await page.screenshot({ path: screenshot, fullPage: true });
       const layout = await inspectLayout(page);
       let tradeView = null;
       let hyperliquidTradeView = null;
       if (viewport.name === "popup") {
+        await page.setViewportSize({ width: 500, height: 600 });
         await renderTradeFixture(page);
         const tradeScreenshot = artifactPath("popup-layout-trade", "png");
         await page.screenshot({ path: tradeScreenshot, fullPage: true });
@@ -506,6 +625,12 @@ async function main() {
       if (layout.documentWidth > viewport.width) {
         throw new Error(`${viewport.name} layout overflowed horizontally: document width ${layout.documentWidth}, viewport ${viewport.width}`);
       }
+      if (!/Manrope/.test(layout.uiFontFamily) || !layout.manropeLoaded) {
+        throw new Error(`${viewport.name} layout did not render with the bundled Manrope font: ${JSON.stringify({ family: layout.uiFontFamily, loaded: layout.manropeLoaded })}`);
+      }
+      if (layout.tabsOverlap || layout.tabTextOverflowing || layout.tabButtonRects.length !== 3) {
+        throw new Error(`${viewport.name} market tabs overlapped instead of keeping three equal columns: ${JSON.stringify(layout.tabButtonRects)}`);
+      }
       if (layout.resultsRect && layout.shellRect && layout.resultsRect.bottom > layout.shellRect.bottom + 1) {
         throw new Error(`${viewport.name} scrolling results region exceeded the shell: results bottom ${layout.resultsRect.bottom}, shell bottom ${layout.shellRect.bottom}`);
       }
@@ -518,7 +643,7 @@ async function main() {
       if (layout.expandedCaretCount !== 0 || layout.scenarioLabels.length !== 0 || layout.scenarioValues.length !== 0) {
         throw new Error(`${viewport.name} layout should start with every market card collapsed: ${JSON.stringify({ caretCount: layout.expandedCaretCount, labels: layout.scenarioLabels, values: layout.scenarioValues })}`);
       }
-      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 562 || layout.shellRect.height > 566)) {
+      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.height < 566 || layout.shellRect.height > 570)) {
         throw new Error(`${viewport.name} layout shell height drifted from the reference aspect target: ${layout.shellRect && layout.shellRect.height}`);
       }
       if (viewport.name === "popup") {
@@ -528,32 +653,38 @@ async function main() {
         if (!/\$261M Vol/.test(tradeView.tradeMeta) || !/Ends Dec 31, 2026/.test(tradeView.tradeMeta)) {
           throw new Error(`${viewport.name} trade view meta drifted from the target market: ${JSON.stringify(tradeView)}`);
         }
-        if (tradeView.activeRange !== "1M" || !/^Buy\s+Yes/.test(tradeView.buyText) || !/Est\. shares:/.test(tradeView.estimateText) || tradeView.orderBookRows < 10 || tradeView.sourceBadgeCount !== 1) {
+        if (tradeView.activeRange !== "1M" || tradeView.executionControlCount !== 0 || tradeView.tradeDataState !== "ready" || tradeView.orderBookRows !== 10 || tradeView.visibleOrderBookRows !== 10 || tradeView.sourceBadgeCount !== 1) {
           throw new Error(`${viewport.name} trade view controls were incomplete: ${JSON.stringify(tradeView)}`);
+        }
+        if (!/Live Polymarket depth · 19:30:00 UTC/.test(tradeView.bookStateText)) {
+          throw new Error(`${viewport.name} trade view did not identify the live depth snapshot: ${JSON.stringify(tradeView)}`);
         }
         if (!/Yes 32¢/.test(tradeView.bodyText) || !/No 68¢/.test(tradeView.bodyText) || /No 1¢/.test(tradeView.bodyText)) {
           throw new Error(`${viewport.name} trade view rendered incorrect Yes/No prices: ${JSON.stringify(tradeView)}`);
         }
-        if (!tradeView.shellRect || !tradeView.viewRect || !tradeView.bookRect || !tradeView.buyRect || tradeView.viewRect.height <= tradeView.shellRect.height || tradeView.bookRect.top <= tradeView.buyRect.bottom) {
-          throw new Error(`${viewport.name} trade view stopped behaving like a scrollable trade surface: ${JSON.stringify(tradeView)}`);
+        if (tradeView.viewMode !== "trade" || tradeView.viewportWidth !== 500 || tradeView.viewportHeight !== 600 || !tradeView.shellRect || tradeView.shellRect.width < 498 || tradeView.shellRect.width > 502 || tradeView.shellRect.height < 598 || tradeView.shellRect.height > 602) {
+          throw new Error(`${viewport.name} trade view did not fill the 500x600 action popup: ${JSON.stringify(tradeView)}`);
         }
-        if (!tradeView.ticketRect || tradeView.ticketRect.height < 184 || tradeView.ticketRect.height > 198 || !tradeView.bookRect || tradeView.bookRect.top < 686 || tradeView.bookRect.top > 704) {
-          throw new Error(`${viewport.name} trade view ticket rhythm drifted from the reference: ${JSON.stringify({ ticket: tradeView.ticketRect, book: tradeView.bookRect })}`);
+        if (!tradeView.viewRect || !tradeView.bookRect || !tradeView.ticketRect || !tradeView.chartRect || tradeView.viewRect.bottom > tradeView.shellRect.bottom + 1 || tradeView.bookRect.bottom > tradeView.shellRect.bottom + 1 || tradeView.bookRect.top <= tradeView.ticketRect.bottom || Math.abs(tradeView.bookRect.left - tradeView.chartRect.left) > 1 || Math.abs(tradeView.bookRect.width - tradeView.chartRect.width) > 2 || tradeView.upperBookRatio < 2.14 || tradeView.upperBookRatio > 2.24 || tradeView.resultsScrollHeight > tradeView.resultsClientHeight + 1) {
+          throw new Error(`${viewport.name} trade view did not keep every panel visible without scrolling: ${JSON.stringify(tradeView)}`);
         }
-        if (JSON.stringify(tradeView.tradeActionLabels) !== JSON.stringify(["Settings", "Connect", "Information"])) {
+        if (JSON.stringify(tradeView.tradeActionLabels) !== JSON.stringify(["Refresh data", "Open on Polymarket"])) {
           throw new Error(`${viewport.name} trade action menu labels drifted from the reference: ${JSON.stringify(tradeView.tradeActionLabels)}`);
         }
-        if (tradeView.tradeTitleFontSize < 20.5 || tradeView.tradeTitleFontSize > 21.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 44 || tradeView.tradeTitleRect.height > 52) {
-          throw new Error(`${viewport.name} trade title font size drifted from the reference scale: ${tradeView.tradeTitleFontSize}`);
+        if (!/Manrope/.test(tradeView.uiFontFamily) || !tradeView.manropeLoaded || tradeView.tradeTitleFontSize < 13.5 || tradeView.tradeTitleFontSize > 14.5 || tradeView.tradeMetaFontSize < 10.5 || tradeView.tradeMetaFontSize > 11.5 || !tradeView.tradeTitleRect || tradeView.tradeTitleRect.height < 29 || tradeView.tradeTitleRect.height > 33 || !tradeView.imageWrapRect || tradeView.imageWrapRect.width < 43 || tradeView.imageWrapRect.width > 45 || !tradeView.heroCopyRect || !tradeView.backButtonRect || !tradeView.moreButtonRect || tradeView.backButtonRect.width < 39 || tradeView.backButtonRect.width > 41 || tradeView.imageWrapRect.left - tradeView.backButtonRect.right < 4 || tradeView.imageWrapRect.left - tradeView.backButtonRect.right > 10 || tradeView.heroCopyRect.left - tradeView.imageWrapRect.right < 7 || tradeView.heroCopyRect.left - tradeView.imageWrapRect.right > 9) {
+          throw new Error(`${viewport.name} trade header spacing drifted from the compact reference: ${JSON.stringify(tradeView)}`);
         }
-        if (!tradeView.chartRect || !tradeView.chartPriceRect || tradeView.chartPriceRect.top > tradeView.chartRect.top + 48 || tradeView.chartMarkerCx === null || tradeView.chartMarkerCx < 285 || tradeView.chartMarkerCx > 325 || tradeView.chartMarkerCy === null || tradeView.chartMarkerCy > 98) {
-          throw new Error(`${viewport.name} trade chart marker drifted from the reference peak placement: ${JSON.stringify({ chart: tradeView.chartRect, price: tradeView.chartPriceRect, markerCx: tradeView.chartMarkerCx, markerCy: tradeView.chartMarkerCy })}`);
+        if (!tradeView.chartRect || !tradeView.chartHostRect || tradeView.chartState !== "ready" || tradeView.chartRange !== "1M" || tradeView.chartPointCount < 2 || tradeView.chartCanvasCount < 1 || tradeView.chartRect.height < 280 || tradeView.chartRect.height > 286 || tradeView.chartHostRect.width < tradeView.chartRect.width - 4 || tradeView.chartHostRect.height < 235) {
+          throw new Error(`${viewport.name} KLineCharts line chart was not ready or did not fill its card: ${JSON.stringify({ chart: tradeView.chartRect, host: tradeView.chartHostRect, state: tradeView.chartState, range: tradeView.chartRange, points: tradeView.chartPointCount, canvases: tradeView.chartCanvasCount })}`);
         }
-        if (tradeView.chartPathPointCount < 40 || tradeView.chartPathStartY === null || tradeView.chartPathEndY === null || tradeView.chartPathEndY - tradeView.chartMarkerCy < 44) {
-          throw new Error(`${viewport.name} trade chart lost the reference post-marker drop: ${JSON.stringify({ pointCount: tradeView.chartPathPointCount, startY: tradeView.chartPathStartY, endY: tradeView.chartPathEndY, markerCy: tradeView.chartMarkerCy })}`);
+        if (tradeView.ticketRect.height < 40 || tradeView.ticketRect.height > 42 || tradeView.bookRect.height < 174 || tradeView.bookRect.height > 180 || tradeView.bookHeadingFontSize < 14.5 || tradeView.bookHeadingFontSize > 15.5 || tradeView.bookHeaderFontSize < 10 || tradeView.bookHeaderFontSize > 11.5 || tradeView.bookRowFontSize < 11 || tradeView.bookRowFontSize > 12 || !tradeView.bookRowRect || tradeView.bookRowRect.height < 17.5 || tradeView.bookRowRect.height > 18.5) {
+          throw new Error(`${viewport.name} trade ticket or orderbook density drifted from the compact reference: ${JSON.stringify(tradeView)}`);
         }
-        if (!hyperliquidTradeView || hyperliquidTradeView.sourceLabel !== "Hyperliquid" || !/^Buy\s+Long/.test(hyperliquidTradeView.buyText) || !/Est\. contracts:/.test(hyperliquidTradeView.estimateText)) {
+        if (!hyperliquidTradeView || hyperliquidTradeView.sourceLabel !== "Hyperliquid" || hyperliquidTradeView.executionControlCount !== 0 || hyperliquidTradeView.tradeDataState !== "ready" || hyperliquidTradeView.orderBookRows !== 10 || hyperliquidTradeView.visibleOrderBookRows !== 10 || hyperliquidTradeView.resultsScrollHeight > hyperliquidTradeView.resultsClientHeight + 1 || JSON.stringify(hyperliquidTradeView.sideLabels) !== JSON.stringify(["Long $95.12", "Short $95.12"])) {
           throw new Error(`${viewport.name} Hyperliquid trade view controls were incomplete: ${JSON.stringify(hyperliquidTradeView)}`);
+        }
+        if (hyperliquidTradeView.chartState !== "ready" || hyperliquidTradeView.chartPointCount < 2 || hyperliquidTradeView.chartCanvasCount < 1) {
+          throw new Error(`${viewport.name} Hyperliquid line chart was not ready: ${JSON.stringify(hyperliquidTradeView)}`);
         }
         if (!/Long\s+\$95\.12/.test(hyperliquidTradeView.bodyText) || !/Short\s+\$95\.12/.test(hyperliquidTradeView.bodyText)) {
           throw new Error(`${viewport.name} Hyperliquid trade view rendered incorrect Long/Short prices: ${JSON.stringify(hyperliquidTradeView)}`);
@@ -649,16 +780,16 @@ async function main() {
       if (layout.menuOpen && viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.height < 156 || layout.actionMenuRect.height > 174)) {
         throw new Error(`${viewport.name} action menu height drifted from the compact reference overlay: ${JSON.stringify(layout.actionMenuRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.searchRect || layout.searchRect.top < 33 || layout.searchRect.top > 39)) {
+      if (viewport.name === "popup" && (!layout.searchRect || layout.searchRect.top < 30 || layout.searchRect.top > 32)) {
         throw new Error(`${viewport.name} search control vertical placement drifted from the reference header: ${JSON.stringify(layout.searchRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.searchRect || layout.searchRect.width < 330 || layout.searchRect.width > 370 || layout.searchRect.height < 40 || layout.searchRect.height > 44)) {
+      if (viewport.name === "popup" && (!layout.searchRect || layout.searchRect.width < 380 || layout.searchRect.width > 392 || layout.searchRect.height < 35 || layout.searchRect.height > 37 || layout.searchFontSize < 12.5 || layout.searchFontSize > 13.5)) {
         throw new Error(`${viewport.name} search control size drifted from the reference header: ${JSON.stringify(layout.searchRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.top < 34 || layout.menuButtonRect.top > 38)) {
+      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.top < 28 || layout.menuButtonRect.top > 30)) {
         throw new Error(`${viewport.name} menu button vertical placement drifted from the reference header: ${JSON.stringify(layout.menuButtonRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.width < 49 || layout.menuButtonRect.width > 51 || layout.menuButtonRect.height < 49 || layout.menuButtonRect.height > 51)) {
+      if (viewport.name === "popup" && (!layout.menuButtonRect || layout.menuButtonRect.width < 39 || layout.menuButtonRect.width > 41 || layout.menuButtonRect.height < 39 || layout.menuButtonRect.height > 41)) {
         throw new Error(`${viewport.name} menu button size drifted from the reference header: ${JSON.stringify(layout.menuButtonRect)}`);
       }
       if (layout.menuOpen && viewport.name === "popup" && (!layout.actionMenuRect || layout.actionMenuRect.top > 90 || layout.actionMenuRect.top < 84)) {
@@ -668,37 +799,37 @@ async function main() {
         viewport.name === "popup" &&
         (!layout.tabRowRect ||
           !layout.leadCardRect ||
-          layout.leadCardRect.top - layout.tabRowRect.bottom < 12 ||
-          layout.leadCardRect.top - layout.tabRowRect.bottom > 22)
+          layout.leadCardRect.top - layout.tabRowRect.bottom < 7 ||
+          layout.leadCardRect.top - layout.tabRowRect.bottom > 9)
       ) {
         throw new Error(`${viewport.name} tabs-to-card spacing drifted from the compact header rhythm: ${JSON.stringify({ tabs: layout.tabRowRect, lead: layout.leadCardRect })}`);
       }
-      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.left < 21 || layout.shellRect.left > 23 || layout.shellRect.width < 454 || layout.shellRect.width > 458)) {
+      if (viewport.name === "popup" && (!layout.shellRect || layout.shellRect.left < 15 || layout.shellRect.left > 17 || layout.shellRect.width < 466 || layout.shellRect.width > 470)) {
         throw new Error(`${viewport.name} expanded shell inset drifted from the reference image: ${JSON.stringify(layout.shellRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.tabRowRect || layout.tabRowRect.left < 45 || layout.tabRowRect.left > 49)) {
+      if (viewport.name === "popup" && (!layout.tabRowRect || layout.tabRowRect.left < 31 || layout.tabRowRect.left > 33)) {
         throw new Error(`${viewport.name} tab content was too inset for the reference shell: ${JSON.stringify(layout.tabRowRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.left < 34 || layout.leadCardRect.left > 36 || layout.leadCardRect.width < 430 || layout.leadCardRect.width > 434)) {
+      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.left < 27 || layout.leadCardRect.left > 29 || layout.leadCardRect.width < 442 || layout.leadCardRect.width > 446)) {
         throw new Error(`${viewport.name} lead card did not use the reference-width shell rhythm: ${JSON.stringify(layout.leadCardRect)}`);
       }
-      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.height < 74 || layout.leadCardRect.height > 90)) {
+      if (viewport.name === "popup" && (!layout.leadCardRect || layout.leadCardRect.height < 72 || layout.leadCardRect.height > 76 || layout.leadTitleFontSize < 12.5 || layout.leadTitleFontSize > 13.5 || layout.leadQuoteFontSize < 14.5 || layout.leadQuoteFontSize > 15.5)) {
         throw new Error(`${viewport.name} lead card height drifted from the closed reference rhythm: ${layout.leadCardRect && layout.leadCardRect.height}`);
       }
-      if (viewport.name === "popup" && (!layout.leadImageRect || layout.leadImageRect.left > 50 || layout.leadImageRect.width < 64 || layout.leadImageRect.width > 70 || layout.leadImageRect.height < 64 || layout.leadImageRect.height > 70)) {
+      if (viewport.name === "popup" && (!layout.leadImageRect || layout.leadImageRect.left > 42 || layout.leadImageRect.width < 52 || layout.leadImageRect.width > 56 || layout.leadImageRect.height < 52 || layout.leadImageRect.height > 56)) {
         throw new Error(`${viewport.name} lead market image was too small for the reference card: ${JSON.stringify(layout.leadImageRect)}`);
       }
       if (
         viewport.name === "popup" &&
         (!layout.visualRadii ||
-          layout.visualRadii.shell < 29 ||
-          layout.visualRadii.shell > 31 ||
-          layout.visualRadii.leadCard < 16 ||
-          layout.visualRadii.leadCard > 18 ||
-          layout.visualRadii.compactCard < 15 ||
-          layout.visualRadii.compactCard > 17 ||
-          layout.visualRadii.actionMenu < 15 ||
-          layout.visualRadii.actionMenu > 17)
+          layout.visualRadii.shell < 15 ||
+          layout.visualRadii.shell > 17 ||
+          layout.visualRadii.leadCard < 13 ||
+          layout.visualRadii.leadCard > 15 ||
+          layout.visualRadii.compactCard < 13 ||
+          layout.visualRadii.compactCard > 15 ||
+          layout.visualRadii.actionMenu < 11 ||
+          layout.visualRadii.actionMenu > 13)
       ) {
         throw new Error(`${viewport.name} reference-style radii drifted: ${JSON.stringify(layout.visualRadii)}`);
       }

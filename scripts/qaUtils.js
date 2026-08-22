@@ -349,9 +349,32 @@ function extractArticleFromHtml(html, url) {
   return extractor.extractArticleFromDocument(dom.window.document, { Readability });
 }
 
+function assertRequestedVerifications(result, options = {}) {
+  if (options.verifyKline !== true) {
+    return;
+  }
+
+  const clicked = result && result.clickedLinkCheck;
+  if (!clicked || clicked.skipped || clicked.internalTradeView !== true) {
+    throw new Error("KLineCharts verification was requested but no trade view was opened.");
+  }
+
+  const chart = clicked.controls && clicked.controls.klineChart;
+  if (
+    !chart ||
+    chart.state !== "ready" ||
+    chart.ready !== true ||
+    Number(chart.pointCount) < 2 ||
+    Number(chart.canvasCount) < 1
+  ) {
+    throw new Error("KLineCharts verification did not produce a ready real-data canvas.");
+  }
+}
+
 module.exports = {
   FEEDS,
   artifactPath,
+  assertRequestedVerifications,
   discoverArticleLinks,
   extractArticleFromHtml,
   fetchText,

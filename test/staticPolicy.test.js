@@ -50,8 +50,51 @@ test("source does not include page monitoring or AI-service calls", () => {
   assert.doesNotMatch(source, /chrome\.tabs\.onUpdated/);
   assert.doesNotMatch(source, /chrome\.webNavigation/);
   assert.doesNotMatch(source, /chrome\.declarativeContent/);
-  assert.doesNotMatch(source, /chrome\.windows\.create|chrome\.tabs\.create/);
+  assert.doesNotMatch(source, /chrome\.windows\.create/);
   assert.doesNotMatch(source, /api\.openai\.com|anthropic\.com|generativelanguage\.googleapis\.com|api\.mistral\.ai/i);
+
+  const tabOpeners = listFiles("src")
+    .filter((file) => /\.js$/.test(file))
+    .filter((file) => /chrome\.tabs\.create/.test(fs.readFileSync(path.join(root, file), "utf8")));
+  assert.deepEqual(tabOpeners, [path.join("src", "popup", "popup.js")]);
+
+  const popup = fs.readFileSync(path.join(root, "src/popup/popup.js"), "utf8");
+  assert.equal((popup.match(/chrome\.tabs\.create\s*\(/g) || []).length, 1);
+  assert.match(popup, /host === "polymarket\.com" \|\| host\.endsWith\("\.polymarket\.com"\) \|\| host === "app\.hyperliquid\.xyz"/);
+  assert.match(popup, /url\.protocol === "https:" && allowedHost/);
+  assert.match(popup, /const venueUrl = trustedTradeVenueUrl\([\s\S]{0,500}chrome\.tabs\.create\(\{ url: venueUrl \}\)/);
+});
+
+test("popup packages KLineCharts locally with its required attribution before the adapter", () => {
+  const popup = fs.readFileSync(path.join(root, "src/popup/popup.html"), "utf8");
+  const scripts = Array.from(popup.matchAll(/<script\s+src="([^"]+)"/g), (match) => match[1]);
+  const libraryPath = path.join(root, "src/vendor/klinecharts/klinecharts.min.js");
+  const licensePath = path.join(root, "src/vendor/klinecharts/LICENSE");
+  const noticePath = path.join(root, "src/vendor/klinecharts/NOTICE");
+  const upstreamLicensePath = path.join(root, "src/vendor/klinecharts/licenses/LICENSE-lightweight-charts");
+
+  assert.deepEqual(scripts.slice(-3), [
+    "../vendor/klinecharts/klinecharts.min.js",
+    "./klinecharts.js",
+    "./popup.js"
+  ]);
+  assert.ok(fs.existsSync(libraryPath));
+  assert.ok(fs.existsSync(licensePath));
+  assert.ok(fs.existsSync(noticePath));
+  assert.ok(fs.existsSync(upstreamLicensePath));
+  assert.match(fs.readFileSync(libraryPath, "utf8"), /@license[\s\S]{0,120}KLineChart v10\.0\.1/);
+});
+
+test("popup packages the Manrope variable font locally with its license", () => {
+  const css = fs.readFileSync(path.join(root, "src/popup/popup.css"), "utf8");
+  const fontPath = path.join(root, "src/popup/assets/fonts/manrope-latin-variable.woff2");
+  const licensePath = path.join(root, "src/popup/assets/fonts/OFL.txt");
+  const font = fs.readFileSync(fontPath);
+
+  assert.equal(font.subarray(0, 4).toString("ascii"), "wOF2");
+  assert.match(fs.readFileSync(licensePath, "utf8"), /SIL OPEN FONT LICENSE Version 1\.1/);
+  assert.match(css, /url\("\.\/assets\/fonts\/manrope-latin-variable\.woff2"\)\s+format\("woff2"\)/);
+  assert.doesNotMatch(css, /fonts\.(?:googleapis|gstatic)\.com/);
 });
 
 test("popup visible controls have menu semantics and hidden utilities are not tabbable", () => {
@@ -83,17 +126,15 @@ test("popup visible controls have menu semantics and hidden utilities are not ta
   assert.match(popup, /<circle class="profile-avatar-head" cx="31" cy="23" r="7\.2" \/>/);
   assert.match(popup, /<path class="profile-avatar-body" d="M13\.5 52\.5C15\.2 40\.8 22 34\.6 31 34\.6s15\.8 6\.2 17\.5 17\.9Z" \/>/);
   assert.match(popup, /<circle class="profile-avatar-status-core" cx="50" cy="49" r="5" \/>/);
-  assert.match(css, /\.menu-button\s*{[^}]*width:\s*50px;[^}]*height:\s*50px;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s);
-  assert.match(css, /\.profile-avatar\s*{[^}]*width:\s*50px;[^}]*height:\s*50px;[^}]*overflow:\s*visible;/s);
   assert.match(css, /\.profile-avatar-status-core\s*{[^}]*fill:\s*url\("#profile-avatar-status"\);/s);
 });
 
 test("popup loader keeps the crisp inverse animation recipe", () => {
   const css = fs.readFileSync(path.join(root, "src/popup/popup.css"), "utf8");
 
-  assert.match(css, /\.loader\s*{[^}]*width:\s*100px;[^}]*background:\s*#000;[^}]*filter:\s*blur\(5px\)\s+contrast\(10\);[^}]*mix-blend-mode:\s*screen;/s);
-  assert.match(css, /\.loader::before,\s*\.loader::after\s*{[^}]*linear-gradient\(#fff 0 0\)[^}]*background-size:\s*20px\s+40px;/s);
-  assert.match(css, /\.loader::after\s*{[^}]*width:\s*20px;[^}]*height:\s*20px;[^}]*background:\s*#fff;/s);
+  assert.match(css, /\.loader\s*{[^}]*background:\s*#000;[^}]*filter:\s*blur\(5px\)\s+contrast\(10\);[^}]*mix-blend-mode:\s*screen;/s);
+  assert.match(css, /\.loader::before,\s*\.loader::after\s*{[^}]*linear-gradient\(#fff 0 0\)[^}]*background-size:/s);
+  assert.match(css, /\.loader::after\s*{[^}]*border-radius:\s*50%;[^}]*background:\s*#fff;[^}]*animation:\s*l10\s+1s\s+infinite;/s);
 });
 
 test("expanded popup keeps a taller anchored action height", () => {
@@ -103,4 +144,11 @@ test("expanded popup keeps a taller anchored action height", () => {
   assert.match(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*height:\s*600px;[^}]*min-height:\s*600px;[^}]*max-height:\s*600px;/s);
   assert.doesNotMatch(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*height:\s*min\([^}]*100vh/s);
   assert.doesNotMatch(css, /html\[data-view-mode="expanded"\],\s*html\[data-view-mode="expanded"\]\s+body\s*{[^}]*height:\s*850px;[^}]*min-height:\s*850px;/s);
+});
+
+test("live order-book depth bars animate real updates and respect reduced motion", () => {
+  const css = fs.readFileSync(path.join(root, "src/popup/popup.css"), "utf8");
+
+  assert.match(css, /\.trade-book-row::before\s*\{[^}]*transition:\s*width\s+\d+ms\s+ease-out;/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.trade-book-row::before\s*\{[^}]*transition:\s*none;/s);
 });

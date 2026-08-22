@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Polymarket Article Matcher",
-  "description": "Finds high-confidence market matches for the article you are reading after manual activation.",
+  "name": "PMEx Market Matcher",
+  "description": "Read-only article matching and live public market data from Polymarket and Hyperliquid.",
   "version": "0.1.0",
   "action": {
     "default_title": "Find market matches",

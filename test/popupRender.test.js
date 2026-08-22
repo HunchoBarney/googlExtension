@@ -383,7 +383,7 @@ test("renders one clickable parent event card and hides child markets", () => {
   assert.match(cards[0].textContent, /Will the Fed hold rates/);
 });
 
-test("renders an internal trade view with chart, order ticket, and order book", () => {
+test("renders a truthful loading trade view without synthetic depth or execution controls", () => {
   const { renderer, results } = setupRenderer();
 
   renderer.renderTradeView(results, makeBinaryCandidate({
@@ -408,30 +408,30 @@ test("renders an internal trade view with chart, order ticket, and order book", 
   assert.ok(view.querySelector("[data-trade-back]"));
   assert.ok(view.querySelector("[data-trade-menu]"));
   assert.equal(view.querySelector("[data-trade-menu]").getAttribute("aria-expanded"), "false");
-  assert.equal(view.querySelectorAll("[data-trade-action]").length, 3);
+  assert.equal(view.querySelectorAll("[data-trade-action]").length, 2);
   assert.deepEqual(
     Array.from(view.querySelectorAll("[data-trade-action]")).map((node) => node.textContent),
-    ["Settings", "Connect", "Information"]
+    ["Refresh data", "Open on Polymarket"]
   );
-  assert.equal(view.querySelector("[data-trade-action='open-venue']"), null);
+  assert.ok(view.querySelector("[data-trade-action='refresh']"));
+  assert.ok(view.querySelector("[data-trade-action='open-venue']"));
   assert.equal(view.querySelector("[data-trade-actions]").hidden, true);
-  assert.ok(view.querySelector(".trade-chart-svg .trade-chart-line"));
-  assert.equal(view.querySelector(".trade-chart-price").textContent, "$0.3200");
+  assert.ok(view.querySelector("[data-kline-chart]"));
+  assert.equal(view.querySelector("[data-kline-chart]").dataset.klineState, "pending");
+  assert.equal(view.querySelector(".kline-chart-empty").textContent, "Price history unavailable.");
   assert.equal(view.querySelector(".trade-range-button.is-active").dataset.tradeRange, "1M");
-  assert.ok(view.querySelector("[data-trade-range='1Y']").dataset.chartPath);
-  assert.notEqual(
-    view.querySelector("[data-trade-range='1Y']").dataset.chartPath,
-    view.querySelector("[data-trade-range='1M']").dataset.chartPath
-  );
   assert.match(view.textContent, /Yes\s+32/);
   assert.match(view.textContent, /No\s+68/);
-  assert.equal(view.querySelector(".trade-buy-button").textContent, "Buy Yes");
-  assert.match(view.querySelector(".trade-estimate").textContent, /312\.5/);
-  assert.equal(view.querySelectorAll(".trade-book-bid .trade-book-row").length, 5);
-  assert.equal(view.querySelectorAll(".trade-book-ask .trade-book-row").length, 5);
+  assert.equal(view.querySelector("[data-trade-amount]"), null);
+  assert.equal(view.querySelector("[data-trade-max]"), null);
+  assert.equal(view.querySelector("[data-trade-buy]"), null);
+  assert.equal(view.querySelector("[data-trade-estimate]"), null);
+  assert.equal(view.querySelector(".trade-order-book").dataset.tradeDataState, "loading");
+  assert.match(view.querySelector(".trade-book-state").textContent, /Loading live depth/);
+  assert.equal(view.querySelectorAll(".trade-book-row").length, 0);
 });
 
-test("trade view renders live CLOB chart history and depth when provided", () => {
+test("trade view preserves live CLOB depth beside the KLineCharts host", () => {
   const { renderer, results } = setupRenderer();
 
   renderer.renderTradeView(results, makeBinaryCandidate({
@@ -466,16 +466,18 @@ test("trade view renders live CLOB chart history and depth when provided", () =>
           { t: 1780086400, p: 0.32 }
         ]
       }
-    }
+    },
+    tradeDataState: "ready",
+    tradeDataFetchedAt: 1780086400000
   }));
 
   const view = results.querySelector(".trade-view");
-  assert.equal(view.querySelector(".trade-chart-price").textContent, "$0.3200");
-  assert.equal(view.querySelector("[data-trade-range='1M']").dataset.chartPrice, "$0.3200");
-  assert.notEqual(
-    view.querySelector("[data-trade-range='1M']").dataset.chartPath,
-    view.querySelector("[data-trade-range='1Y']").dataset.chartPath
-  );
+  assert.ok(view.querySelector("[data-kline-chart]"));
+  assert.match(view.querySelector(".trade-chart-stream-state").textContent, /Connecting live chart/);
+  assert.equal(view.querySelector(".trade-chart-svg"), null);
+  assert.equal(view.querySelector(".trade-order-book").dataset.tradeDataState, "ready");
+  assert.match(view.querySelector(".trade-book-state").textContent, /Live Polymarket depth.*UTC/);
+  assert.equal(view.querySelector(".trade-book-state").hidden, false);
   assert.deepEqual(
     Array.from(view.querySelector(".trade-book-bid .trade-book-row").querySelectorAll("span")).map((node) => node.textContent),
     ["31\u00a2", "123", "123"]
@@ -522,7 +524,7 @@ test("trade view infers the opposite side when a grouped market omits secondary 
   assert.doesNotMatch(text, /No\s+1/);
 });
 
-test("trade view uses Hyperliquid mark prices instead of fake binary fallbacks", () => {
+test("trade view uses Hyperliquid mark prices while real depth loads", () => {
   const { renderer, results } = setupRenderer();
 
   renderer.renderTradeView(results, {
@@ -552,14 +554,15 @@ test("trade view uses Hyperliquid mark prices instead of fake binary fallbacks",
   const view = results.querySelector(".trade-view");
   const ticketText = view.querySelector(".trade-ticket").textContent;
   assert.equal(view.dataset.marketUrl, "https://app.hyperliquid.xyz/trade/BRENT");
-  assert.equal(view.querySelector(".trade-chart-price").textContent, "$95.12");
+  assert.ok(view.querySelector("[data-kline-chart]"));
   assert.match(ticketText, /Long\s+\$95\.12/);
   assert.match(ticketText, /Short\s+\$95\.12/);
-  assert.equal(view.querySelector(".trade-buy-button").textContent, "Buy Long");
-  assert.match(view.querySelector(".trade-estimate").textContent, /Est\. contracts:/);
+  assert.equal(view.querySelector(".trade-buy-button"), null);
+  assert.equal(view.querySelector(".trade-estimate"), null);
   assert.doesNotMatch(ticketText, /Yes\s+32/);
   assert.doesNotMatch(ticketText, /No\s+68/);
-  assert.match(view.querySelector(".trade-book-bid .trade-book-row").textContent, /\$95\./);
+  assert.match(view.querySelector(".trade-book-state").textContent, /Loading live depth/);
+  assert.equal(view.querySelectorAll(".trade-book-row").length, 0);
   assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /31\u00a2/);
 });
 
@@ -598,7 +601,7 @@ test("trade view ignores stale binary outcome fields for Hyperliquid markets", (
   assert.match(ticketText, /Short\s+\$95\.12/);
   assert.doesNotMatch(ticketText, /Yes\s+41/);
   assert.doesNotMatch(ticketText, /No\s+59/);
-  assert.equal(view.querySelector(".trade-chart-price").textContent, "$95.12");
+  assert.ok(view.querySelector("[data-kline-chart]"));
   assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /\d+\u00a2/);
 });
 
@@ -627,14 +630,15 @@ test("trade view does not invent binary prices for Hyperliquid markets without a
 
   const view = results.querySelector(".trade-view");
   const ticketText = view.querySelector(".trade-ticket").textContent;
-  assert.equal(view.querySelector(".trade-chart-price").textContent, "n/a");
+  assert.ok(view.querySelector("[data-kline-chart]"));
   assert.match(ticketText, /Long\s+n\/a/);
   assert.match(ticketText, /Short\s+n\/a/);
-  assert.equal(view.querySelector(".trade-buy-button").textContent, "Buy Long");
-  assert.match(view.querySelector(".trade-estimate").textContent, /Est\. contracts: 0/);
+  assert.equal(view.querySelector(".trade-buy-button"), null);
+  assert.equal(view.querySelector(".trade-estimate"), null);
   assert.doesNotMatch(ticketText, /Yes\s+1/);
   assert.doesNotMatch(ticketText, /No\s+99/);
-  assert.match(view.querySelector(".trade-order-book").textContent, /n\/a/);
+  assert.match(view.querySelector(".trade-book-state").textContent, /Loading live depth/);
+  assert.equal(view.querySelectorAll(".trade-book-row").length, 0);
   assert.doesNotMatch(view.querySelector(".trade-order-book").textContent, /\d+\u00a2/);
 });
 

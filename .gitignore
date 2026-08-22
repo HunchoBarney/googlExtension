@@ -4,4 +4,11 @@ coverage/
 dist/
 test-artifacts/
 .lazyweb/
+.superpowers/
+landing-assets/
+outputs/
+docs/superpowers/
+plan.txt
+OPEN_SOURCE_READINESS_REPORT.md
+design-qa.md
 *.log

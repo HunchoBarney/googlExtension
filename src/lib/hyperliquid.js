@@ -11,8 +11,17 @@
 
   const HYPERLIQUID_API = "https://api.hyperliquid.xyz";
   const HYPERLIQUID_APP = "https://app.hyperliquid.xyz";
+  const HYPERLIQUID_WS = "wss://api.hyperliquid.xyz/ws";
   const DEFAULT_MAX_RESULTS = 4;
   const DEFAULT_TIMEOUT_MS = 3500;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const TRADE_HISTORY_RANGES = [
+    ["1D", "15m", DAY_MS],
+    ["1W", "1h", 7 * DAY_MS],
+    ["1M", "4h", 31 * DAY_MS],
+    ["1Y", "1d", 365 * DAY_MS],
+    ["ALL", "1d", null]
+  ];
   const ALIASES = new Map([
     ["BTC", ["Bitcoin", "BTC"]],
     ["ETH", ["Ethereum", "Ether", "ETH"]],
@@ -219,7 +228,7 @@
       .filter(Boolean);
   }
 
-  async function fetchMetaAndAssetCtxs(options = {}) {
+  async function fetchInfo(body, options = {}) {
     const fetchImpl = options.fetchImpl || (typeof fetch === "function" ? fetch.bind(globalThis) : null);
     if (!fetchImpl) {
       throw new Error("No fetch implementation is available for Hyperliquid.");
@@ -232,18 +241,234 @@
       const response = await fetchImpl(`${HYPERLIQUID_API}/info`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "metaAndAssetCtxs" }),
+        body: JSON.stringify(body),
         signal: controller ? controller.signal : undefined
       });
       if (!response || !response.ok) {
         throw new Error(`Hyperliquid API returned ${response ? response.status : "no response"}`);
       }
-      return normalizeMetaAndAssetCtxs(await response.json());
+      return response.json();
     } finally {
       if (timeout) {
         clearTimeout(timeout);
       }
     }
+  }
+
+  async function fetchMetaAndAssetCtxs(options = {}) {
+    return normalizeMetaAndAssetCtxs(await fetchInfo({ type: "metaAndAssetCtxs" }, options));
+  }
+
+  function normalizeBook(payload) {
+    const levels = payload && Array.isArray(payload.levels) ? payload.levels : [];
+    const normalizeSide = (rows) => (Array.isArray(rows) ? rows : [])
+      .map((row) => {
+        const price = toNumber(row && (row.px ?? row.price));
+        const size = toNumber(row && (row.sz ?? row.size));
+        return price !== null && price > 0 && size !== null && size > 0 ? { price, size } : null;
+      })
+      .filter(Boolean);
+    const bids = normalizeSide(levels[0]);
+    const asks = normalizeSide(levels[1]);
+    return bids.length || asks.length ? { bids, asks } : null;
+  }
+
+  function normalizeHistory(payload) {
+    return (Array.isArray(payload) ? payload : [])
+      .map((row) => {
+        const t = toNumber(row && (row.t ?? row.time ?? row.timestamp));
+        const p = toNumber(row && (row.c ?? row.close ?? row.p ?? row.price));
+        return t !== null && p !== null && p > 0 ? { t, p } : null;
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.t - right.t);
+  }
+
+  function streamTimestamp(value) {
+    const timestamp = toNumber(value);
+    if (timestamp === null || timestamp <= 0) {
+      return Date.now();
+    }
+    return timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+  }
+
+  function openTradeStream(candidate = {}, handlers = {}, options = {}) {
+    const coin = normalizeWhitespace(candidate.coin || candidate.symbol || (candidate.raw && candidate.raw.asset && candidate.raw.asset.name));
+    const WebSocketImpl = options.WebSocketImpl || (typeof WebSocket === "function" ? WebSocket : null);
+    if (!coin || !WebSocketImpl) {
+      return null;
+    }
+
+    const setIntervalImpl = options.setIntervalImpl || setInterval;
+    const clearIntervalImpl = options.clearIntervalImpl || clearInterval;
+    const setTimeoutImpl = options.setTimeoutImpl || setTimeout;
+    const clearTimeoutImpl = options.clearTimeoutImpl || clearTimeout;
+    const reconnectDelayMs = Number.isFinite(Number(options.reconnectDelayMs))
+      ? Number(options.reconnectDelayMs)
+      : 1000;
+    let stopped = false;
+    let socket = null;
+    let heartbeat = null;
+    let retry = null;
+
+    const notify = (name, value) => {
+      if (typeof handlers[name] === "function") {
+        handlers[name](value);
+      }
+    };
+
+    const clearHeartbeat = () => {
+      if (heartbeat !== null) {
+        clearIntervalImpl(heartbeat);
+        heartbeat = null;
+      }
+    };
+
+    const handlePayload = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return;
+      }
+      if (payload.channel === "l2Book") {
+        const book = normalizeBook(payload.data);
+        if (book) {
+          notify("onBook", {
+            outcomeKeys: ["long", "short"],
+            book,
+            timestamp: streamTimestamp(payload.data && payload.data.time)
+          });
+        }
+        return;
+      }
+      if (payload.channel !== "candle") {
+        return;
+      }
+      for (const candle of Array.isArray(payload.data) ? payload.data : [payload.data]) {
+        const price = toNumber(candle && (candle.c ?? candle.close));
+        if (price !== null && price > 0) {
+          notify("onPrice", {
+            outcomeKeys: ["long", "short"],
+            price,
+            timestamp: streamTimestamp(candle.t ?? candle.time ?? candle.timestamp)
+          });
+        }
+      }
+    };
+
+    const connect = () => {
+      if (stopped) {
+        return;
+      }
+      retry = null;
+      let connection;
+      let closed = false;
+      try {
+        connection = new WebSocketImpl(HYPERLIQUID_WS);
+        socket = connection;
+      } catch (error) {
+        notify("onError", error);
+        notify("onClose", error);
+        retry = setTimeoutImpl(connect, reconnectDelayMs);
+        return;
+      }
+      connection.addEventListener("open", () => {
+        if (stopped) {
+          return;
+        }
+        connection.send(JSON.stringify({
+          method: "subscribe",
+          subscription: { type: "l2Book", coin, fast: true }
+        }));
+        connection.send(JSON.stringify({
+          method: "subscribe",
+          subscription: { type: "candle", coin, interval: "1m" }
+        }));
+        clearHeartbeat();
+        heartbeat = setIntervalImpl(() => {
+          if (!stopped && connection.readyState === 1) {
+            connection.send(JSON.stringify({ method: "ping" }));
+          }
+        }, 30000);
+        notify("onOpen");
+      });
+      connection.addEventListener("message", (event) => {
+        try {
+          handlePayload(JSON.parse(event.data));
+        } catch (error) {
+          notify("onError", error);
+        }
+      });
+      connection.addEventListener("error", (error) => {
+        notify("onError", error);
+      });
+      connection.addEventListener("close", (event) => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        clearHeartbeat();
+        if (stopped) {
+          return;
+        }
+        notify("onClose", event);
+        retry = setTimeoutImpl(connect, reconnectDelayMs);
+      });
+    };
+
+    connect();
+    return function stopTradeStream() {
+      stopped = true;
+      clearHeartbeat();
+      if (retry !== null) {
+        clearTimeoutImpl(retry);
+        retry = null;
+      }
+      if (socket && socket.readyState < 2) {
+        socket.close();
+      }
+    };
+  }
+
+  async function fetchTradeData(candidate = {}, options = {}) {
+    const coin = normalizeWhitespace(candidate.coin || candidate.symbol || (candidate.raw && candidate.raw.asset && candidate.raw.asset.name));
+    if (!coin) {
+      return null;
+    }
+    const optionNow = Number(options.now);
+    const now = Number.isFinite(optionNow) ? optionNow : Date.now();
+    const requests = [
+      fetchInfo({ type: "l2Book", coin }, options),
+      ...TRADE_HISTORY_RANGES.map(([_range, interval, lookback]) => fetchInfo({
+        type: "candleSnapshot",
+        req: {
+          coin,
+          interval,
+          startTime: lookback === null ? 0 : now - lookback,
+          endTime: now
+        }
+      }, options))
+    ];
+    const settled = await Promise.allSettled(requests);
+    if (settled.every((result) => result.status === "rejected")) {
+      throw settled[0].reason || new Error("Hyperliquid trade data request failed.");
+    }
+    const book = settled[0].status === "fulfilled" ? normalizeBook(settled[0].value) : null;
+    const histories = {};
+    for (const [index, [range]] of TRADE_HISTORY_RANGES.entries()) {
+      const result = settled[index + 1];
+      const history = result.status === "fulfilled" ? normalizeHistory(result.value) : [];
+      if (history.length) {
+        histories[range] = history;
+      }
+    }
+    if (!book && !Object.keys(histories).length) {
+      return null;
+    }
+    return {
+      tradeDataSource: "hyperliquid",
+      tradeBooksByOutcome: book ? { long: book, short: book } : {},
+      tradeChartHistoryByOutcome: Object.keys(histories).length ? { long: histories, short: histories } : {},
+      tradeDataFetchedAt: now
+    };
   }
 
   function scoreCandidateForText(candidate, text) {
@@ -327,8 +552,11 @@
   return {
     HYPERLIQUID_API,
     HYPERLIQUID_APP,
+    HYPERLIQUID_WS,
     normalizeMetaAndAssetCtxs,
     fetchMetaAndAssetCtxs,
+    fetchTradeData,
+    openTradeStream,
     searchAndRank,
     searchMarkets,
     trendingMarkets,

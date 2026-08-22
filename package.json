@@ -1,26 +1,29 @@
 {
-  "name": "predmarketextension",
-  "version": "1.0.0",
-  "description": "",
+  "name": "pmex-market-matcher",
+  "version": "0.1.0",
+  "description": "Unofficial read-only Chrome extension for matching articles to public Polymarket and Hyperliquid market data.",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test \"test/*.test.js\"",
     "test:polymarket:live": "node scripts/live-polymarket-smoke.js",
     "test:articles:live": "node scripts/live-article-qa.js --limit=8",
     "test:layout": "node scripts/popup-layout-smoke.js",
-    "test:browser": "node scripts/browser-smoke.js && node scripts/browser-smoke.js --verify-interactions --verify-expanded --skip-clicks",
+    "test:browser": "node scripts/browser-smoke.js --verify-kline && node scripts/browser-smoke.js --verify-interactions --verify-expanded --skip-clicks",
     "test:visual": "node scripts/compare-popup-reference.js --reference=latest --actual=latest",
     "test:live": "npm run test:polymarket:live && npm run test:articles:live",
     "test:release": "npm test && npm run test:layout && npm run test:live && npm run test:browser",
-    "tune:market-maker": "node scripts/tune-market-maker.js"
+    "package:release": "node scripts/package-release.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "chrome-extension",
+    "market-research",
+    "polymarket",
+    "hyperliquid"
+  ],
+  "author": "Hob-dev",
+  "license": "MIT",
   "type": "commonjs",
-  "dependencies": {
-    "@mozilla/readability": "^0.6.0"
-  },
   "devDependencies": {
+    "@mozilla/readability": "^0.6.0",
     "jsdom": "^29.1.1",
     "playwright-core": "^1.60.0"
   }
