@@ -24,7 +24,7 @@
   "type": "commonjs",
   "devDependencies": {
     "@mozilla/readability": "^0.6.0",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "playwright-core": "^1.60.0"
   }
 }
